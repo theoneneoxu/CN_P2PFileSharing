@@ -57,7 +57,7 @@ public class HostPeer extends Peer {
 		connectionStarter = new ConnectionStarter(this, knownPeerList);
 		activeNeighborList = Collections.synchronizedList(new ArrayList<>());
 		inactiveNeighborList = Collections.synchronizedList(new ArrayList<>());
-		neighborThreadPool = Executors.newFixedThreadPool(20);		//Connections after 20 would be pending in the pool queue and not get served.
+		neighborThreadPool = Executors.newFixedThreadPool(10);
 	}
 
 	public void startRunning() {
@@ -642,7 +642,6 @@ public class HostPeer extends Peer {
 							socket.setSendBufferSize(1024 * 1024);
 						}
 						catch (IOException e) {
-							//P2PLogger.log("IOException happens when establishing connection for peer " + peer.getPeerID() + ". Exception is not rethrown.");
 							continue;	//Unable to connect. Pass this peer.
 						}
 						sendHandshake(socket, hostPeer.getPeerID());
@@ -651,6 +650,7 @@ public class HostPeer extends Peer {
 						iterator.remove();
 					}
 				}
+
 				try {
 					Thread.sleep(3000);
 				}
@@ -675,7 +675,7 @@ public class HostPeer extends Peer {
 		
 	}
 	
-	private abstract class ConnectionHandler implements Runnable {
+	private abstract class ConnectionHandler {
 		
 		private static final String HANDSHAKE = "P2PFILESHARINGPROJ\0\0\0\0\0\0\0\0\0\0";
 
