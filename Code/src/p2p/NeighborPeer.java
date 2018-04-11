@@ -444,7 +444,7 @@ public class NeighborPeer extends Peer {
 				}
 			}
 			catch (IOException e) {
-				P2PLogger.log("IOException happens when sending message for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
+				//P2PLogger.log("IOException happens when sending message for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
 			}
 		}
 		
