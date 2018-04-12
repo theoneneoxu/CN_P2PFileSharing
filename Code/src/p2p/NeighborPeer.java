@@ -1,7 +1,6 @@
 package p2p;
 
 import static p2p.Peer.MessageType.*;
-
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.io.DataInputStream;
@@ -227,6 +226,7 @@ public class NeighborPeer extends Peer {
 	//Handles actual messages exchanged after handshake between host and neighbor.
 	public class MessageHandler implements Runnable {
 		
+		private volatile int requestedPieceIndex;
 		private final HostPeer hostPeer;
 		private final NeighborPeer neighborPeer;
 		private Socket socket;
@@ -257,6 +257,7 @@ public class NeighborPeer extends Peer {
 				P2PLogger.log("IOException happens when creating MessageHandler. Exception is not rethrown.");
 				closeSocket();
 			}
+			requestedPieceIndex = -1;
 			socketLock = new Object();
 			outputLock = new Object();
 		}
@@ -290,11 +291,11 @@ public class NeighborPeer extends Peer {
 				switch(messageType) {
 				case CHOKE:
 					neighborPeer.setUnchokedHost(false);
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " is choked by " + neighborPeer.getPeerID() + ".");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " is choked by Peer " + neighborPeer.getPeerID() + ".");
 					break;
 				case UNCHOKE:
 					neighborPeer.setUnchokedHost(true);
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " is unchoked by " + neighborPeer.getPeerID() + ".");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " is unchoked by Peer " + neighborPeer.getPeerID() + ".");
 					if (hostPeer.isInterested(neighborPeer)) {
 						sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));	
 					} else {
@@ -303,16 +304,16 @@ public class NeighborPeer extends Peer {
 					break;
 				case INTERESTED:
 					neighborPeer.setInterestedInHost(true);
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'interested' message from " + neighborPeer.getPeerID() + ".");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'interested' message from Peer " + neighborPeer.getPeerID() + ".");
 					break;
 				case NOT_INTERESTED:
 					neighborPeer.setInterestedInHost(false);
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'not interested' message from " + neighborPeer.getPeerID() + ".");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'not interested' message from Peer " + neighborPeer.getPeerID() + ".");
 					break;
 				case HAVE:
 					if (messagePayload.length == 4) {
 						pieceIndex = ByteBuffer.wrap(messagePayload).getInt();
-						P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'have' message from " + neighborPeer.getPeerID() + " for the piece " + pieceIndex + ".");
+						P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'have' message from Peer " + neighborPeer.getPeerID() + " for the piece " + pieceIndex + ".");
 					} else {
 						pieceIndex = -1;
 					}
@@ -345,6 +346,9 @@ public class NeighborPeer extends Peer {
 					}
 					break;
 				case PIECE:
+					if (pieceIndex != requestedPieceIndex) {
+						continue;
+					}
 					if (!hostPeer.hasPiece(pieceIndex)) {
 						if (hostPeer.getSharedFile().writePiece(pieceIndex, piece) == 0) {
 							hostPeer.markPieceComplete(pieceIndex);
@@ -384,7 +388,7 @@ public class NeighborPeer extends Peer {
 				hostPeer.getInactiveNeighborList().add(neighborPeer);
 				hostPeer.getConnectionStarter().addConnectingPeer(neighborPeer);
 			}
-			//P2PLogger.log("Thread exists for peer " + neighborPeer.getPeerID() + ".");
+			//P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + ".");
 		}
 
 		public void sendMessage(MessageType messageType, int pieceIndex) {
@@ -403,11 +407,15 @@ public class NeighborPeer extends Peer {
 				neighborPeer.setPreviousInterestOfHost(false);
 				break;
 			case HAVE:
+				messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
+				messageLength += messagePayload.length;
+				break;
 			case REQUEST:
 				if (neighborPeer.hasReachedDownloadingLimit()) {
 					hostPeer.getSpeedLimiter().delayRequestMessage(neighborPeer, pieceIndex);
 					return;
 				}
+				requestedPieceIndex = pieceIndex;
 				messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
 				messageLength += messagePayload.length;
 				break;
@@ -444,7 +452,6 @@ public class NeighborPeer extends Peer {
 				}
 			}
 			catch (IOException e) {
-				//P2PLogger.log("IOException happens when sending message for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
 			}
 		}
 		

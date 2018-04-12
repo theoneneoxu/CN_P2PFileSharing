@@ -74,9 +74,6 @@ public class HostPeer extends Peer {
 	public void stopRunning() {
 		runningIndicator = false;
 		
-		//Send bitfield to keep neighbors up to date. Some HAVE messages may be lost when speed is high.
-		peerManager.sendBitfieldMessages();
-		
 		//Wait a while before close sockets. There may be ongoing processing like neighbor listener sending message via output stream.
 		try {
 			Thread.sleep(1000);
@@ -169,44 +166,6 @@ public class HostPeer extends Peer {
 		speedLimiter.setUploadingSpeedLimit(limit);
 	}
 	
-	private void registerNeighbor(int peerID, Socket socket) {
-		if (socket == null) {
-			return;
-		}
-		synchronized (activeNeighborList) {
-			if (peerID < 0 || activeNeighborList.stream().filter(p -> p.getPeerID() == peerID).count() > 0) {
-				try {
-					socket.close();
-				}
-				catch (IOException e) {
-					P2PLogger.log("IOException happens when closing socket in registerNeighbor. Exception is not rethrown.");
-				}
-				return;
-			}
-		}
-
-		P2PLogger.log("Peer " + getPeerID() + " makes a connection to Peer " + peerID + ".");
-		NeighborPeer neighborPeer = null;
-		synchronized (inactiveNeighborList) {
-			for (NeighborPeer np : inactiveNeighborList) {
-				if (np.getPeerID() == peerID) {
-					neighborPeer = np;
-					break;
-				}
-			}
-		}
-		if (neighborPeer != null) {
-			neighborPeer.reactivatePeer(socket);
-			inactiveNeighborList.remove(neighborPeer);
-		} else {
-			neighborPeer = new NeighborPeer(peerID, this, socket);
-		}
-		neighborPeer.getMessageHandler().sendMessage(BITFIELD);
-		activeNeighborList.add(neighborPeer);
-		neighborThreadPool.execute(neighborPeer.getMessageHandler());
-		//new Thread(neighborPeer.getMessageHandler()).start();
-	}
-
 	public int getFileHealthPercentage() {
 		ArrayList<BitSet> bitSetList = new ArrayList<>();
 
@@ -246,6 +205,39 @@ public class HostPeer extends Peer {
 		return health;
 	}
 	
+	private void registerNeighbor(int peerID, Socket socket) {
+		NeighborPeer neighborPeer;
+		
+		if (socket == null) {
+			return;
+		}
+		synchronized (activeNeighborList) {
+			if (peerID < 0 || activeNeighborList.stream().filter(p -> p.getPeerID() == peerID).count() > 0) {
+				try {
+					socket.close();
+				}
+				catch (IOException e) {
+					P2PLogger.log("IOException happens when closing socket in registerNeighbor. Exception is not rethrown.");
+				}
+				return;
+			}
+		}
+
+		synchronized (inactiveNeighborList) {
+			neighborPeer = inactiveNeighborList.stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
+			inactiveNeighborList.remove(neighborPeer);
+		}
+		if (neighborPeer == null) {
+			neighborPeer = new NeighborPeer(peerID, this, socket);
+		} else {
+			neighborPeer.reactivatePeer(socket);
+		}
+		neighborPeer.getMessageHandler().sendMessage(BITFIELD);
+		activeNeighborList.add(neighborPeer);
+		neighborThreadPool.execute(neighborPeer.getMessageHandler());
+		//new Thread(neighborPeer.getMessageHandler()).start();
+	}
+
 	private class PeerManager implements Runnable {
 		
 		private final int preferredNeighborCount;
@@ -305,9 +297,6 @@ public class HostPeer extends Peer {
 				if (threadSleepCount % 1000 == 0) {
 					saveHostProgress();
 				}
-				if (threadSleepCount % 10000 == 0) {
-					sendBitfieldMessages();		//Send bitfield to keep neighbors up to date. Some HAVE messages may be lost when speed is high.
-				}
 
 				try {
 					Thread.sleep(threadSleep);
@@ -317,7 +306,7 @@ public class HostPeer extends Peer {
 				}
 				threadSleepCount += threadSleep;
 			}
-			//P2PLogger.log("Thread exists for PeerManager.");
+			//P2PLogger.log("[DEBUG] Thread exists for PeerManager.");
 		}
 
 		private void selectPreferredNeighbors() {
@@ -427,14 +416,6 @@ public class HostPeer extends Peer {
 			progressFile.writeFile(getPieceStatusAsBitfield());
 		}
 		
-		private void sendBitfieldMessages() {
-			synchronized (hostPeer.getActiveNeighborList()) {
-				for (NeighborPeer np : hostPeer.getActiveNeighborList()) {
-					np.getMessageHandler().sendMessage(BITFIELD);
-				}
-			}
-		}
-		
 	}
 	
 	public class SpeedLimiter implements Runnable {
@@ -484,6 +465,7 @@ public class HostPeer extends Peer {
 				catch (InterruptedException e) {
 				}
 			}
+			//P2PLogger.log("[DEBUG] Thread exists for SpeedLimiter.");
 		}
 
 		public int getDownloadingSpeedLimit() {
@@ -577,20 +559,20 @@ public class HostPeer extends Peer {
 			while (hostPeer.isRunning()) {
 				try {
 					socket = serverSocket.accept();
-					socket.setReceiveBufferSize(1024 * 1024);
-					socket.setSendBufferSize(1024 * 1024);
+					//socket.setReceiveBufferSize(1024 * 1024);
+					//socket.setSendBufferSize(1024 * 1024);
 				}
 				catch (IOException e) {
-					//P2PLogger.log("IOException happens when accepting connection. Exception is not rethrown.");
 					break;
 				}
 				int peerID = verifyHandshake(socket);
 				sendHandshake(socket, hostPeer.getPeerID());
+				P2PLogger.log("Peer " + hostPeer.getPeerID() + " is connected from Peer " + peerID + ".");
 				hostPeer.registerNeighbor(peerID, socket);
 			}
 			
 			closeSocket();
-			//P2PLogger.log("Thread exists for ConnectionHandler.");
+			//P2PLogger.log("[DEBUG] Thread exists for ConnectionListener.");
 		}
 		
 		public void closeSocket() {
@@ -638,14 +620,15 @@ public class HostPeer extends Peer {
 						Peer peer = iterator.next();
 						try {
 							socket = new Socket(peer.getHostname(), peer.getPort());	//It would take about 1s to get IOException if unable to connect.
-							socket.setReceiveBufferSize(1024 * 1024);
-							socket.setSendBufferSize(1024 * 1024);
+							//socket.setReceiveBufferSize(1024 * 1024);
+							//socket.setSendBufferSize(1024 * 1024);
 						}
 						catch (IOException e) {
 							continue;	//Unable to connect. Pass this peer.
 						}
 						sendHandshake(socket, hostPeer.getPeerID());
 						int peerID = verifyHandshake(socket);
+						P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
 						hostPeer.registerNeighbor(peerID, socket);
 						iterator.remove();
 					}
@@ -657,6 +640,7 @@ public class HostPeer extends Peer {
 				catch (InterruptedException e) {
 				}
 			}
+			//P2PLogger.log("[DEBUG] Thread exists for ConnectionStarter.");
 		}
 
 		public void addConnectingPeer(Peer peer) {
