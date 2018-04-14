@@ -11,7 +11,7 @@ public class Peer {
 	private final int pieceCount;
 	private final BitSet pieceStatus;		//bit representation of file piece completion status
 	
-	public static enum MessageType {
+	public enum MessageType {
 
 		CHOKE((byte)0),
 		UNCHOKE((byte)1),
@@ -74,7 +74,7 @@ public class Peer {
 		}
 	}
 	
-	Peer(Peer peer) {
+	public Peer(Peer peer) {
 		if (peer == null) {
 			throw new IllegalArgumentException("Invalid peer happens when creating Peer.");
 		}
@@ -122,6 +122,7 @@ public class Peer {
 	
 	//Returns 0 if piece status is set successfully.
 	//Returns -1 if input is invalid. No piece status is set.
+	@SuppressWarnings("UnusedReturnValue")
 	public int setPieceStatus(byte[] bitfield) {
 		if (bitfield == null) {
 			return -1;
@@ -140,6 +141,7 @@ public class Peer {
 
 	//Returns 0 if piece is marked successfully.
 	//Returns -1 if pieceIndex is invalid. No piece will be marked.
+	@SuppressWarnings("UnusedReturnValue")
 	public int markPieceComplete(int pieceIndex) {
 		if (pieceIndex < 0 || pieceIndex >= pieceCount) {
 			return -1;

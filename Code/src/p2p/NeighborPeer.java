@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 
+@SuppressWarnings("unused")
 public class NeighborPeer extends Peer {
 
 	private volatile boolean preferredByHost;
@@ -25,7 +26,7 @@ public class NeighborPeer extends Peer {
 	private final HostPeer hostPeer;
 	private final MessageHandler messageHandler;
 
-	NeighborPeer(int peerID, HostPeer hostPeer, Socket socket) {
+	public NeighborPeer(int peerID, HostPeer hostPeer, Socket socket) {
 		super(peerID, socket.getInetAddress().getCanonicalHostName(), socket.getPort(), hostPeer.getPieceCount(), false);
 
 		this.hostPeer = hostPeer;
@@ -98,6 +99,7 @@ public class NeighborPeer extends Peer {
 		return unchokedHost;
 	}
 
+	@SuppressWarnings("UnusedReturnValue")
 	public int addSentToHostCount(long count) {
 		if (count < 0) {
 			return -1;
@@ -110,6 +112,7 @@ public class NeighborPeer extends Peer {
 		return 0;
 	}
 	
+	@SuppressWarnings("UnusedReturnValue")
 	public int addReceivedFromHostCount(long count) {
 		if (count < 0) {
 			return -1;
@@ -224,6 +227,7 @@ public class NeighborPeer extends Peer {
 	}
 
 	//Handles actual messages exchanged after handshake between host and neighbor.
+	@SuppressWarnings("CatchMayIgnoreException")
 	public class MessageHandler implements Runnable {
 		
 		private volatile int requestedPieceIndex;
@@ -235,7 +239,7 @@ public class NeighborPeer extends Peer {
 		private final Object socketLock;
 		private final Object outputLock;
 		
-		MessageHandler(HostPeer hostPeer, NeighborPeer neighborPeer, Socket socket) {
+		public MessageHandler(HostPeer hostPeer, NeighborPeer neighborPeer, Socket socket) {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating MessageHandler.");
 			}
@@ -263,6 +267,7 @@ public class NeighborPeer extends Peer {
 		}
 		
 		//Message listener.
+		@SuppressWarnings("ConstantConditions")
 		@Override
 		public void run() {
 			int messageLength;

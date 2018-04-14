@@ -83,7 +83,7 @@ public class peerProcess {
 		process.close();
 	}
 
-	peerProcess(int hostPeerID, int downloadingSpeedLimit, int uploadingSpeedLimit) throws IOException {
+	public peerProcess(int hostPeerID, int downloadingSpeedLimit, int uploadingSpeedLimit) throws IOException {
 		if (hostPeerID < 0) {
 			throw new IllegalArgumentException("Invalid hostPeerID happens when creating peerProcess.");
 		}
@@ -337,7 +337,8 @@ public class peerProcess {
 		//Closing of hostPeer is handled by peer monitor.
 		p2pLogger.closeFile();
 	}
-	
+
+	@SuppressWarnings("CatchMayIgnoreException")
 	public class PeerMonitor implements Runnable {
 
 		private final int peerCount;
@@ -346,7 +347,7 @@ public class peerProcess {
 		private Peer showDetailPeer;
 		private boolean showHelp;
 		
-		PeerMonitor(HostPeer hostPeer, int peerCount) {
+		public PeerMonitor(HostPeer hostPeer, int peerCount) {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating HostPeerMonitor.");	
 			}
@@ -384,6 +385,7 @@ public class peerProcess {
 					Thread.sleep(threadSleep);
 				}
 				catch (InterruptedException e) {
+					break;
 				}
 				threadSleepCount += threadSleep;
 			}
@@ -423,7 +425,7 @@ public class peerProcess {
 		}
 
 		private void processConsoleInput() {
-			String inputString = "";
+			String inputString = null;
 
 			try {
 				if (consoleReader.ready()) {
@@ -600,6 +602,7 @@ public class peerProcess {
 			return string;
 		}
 		
+		@SuppressWarnings("StringConcatenationInLoop")
 		private String getPeerTable() {
 			ArrayList<NeighborInfo> activeNeighborInfoList = new ArrayList<>();
 			synchronized (hostPeer.getActiveNeighborList()) {

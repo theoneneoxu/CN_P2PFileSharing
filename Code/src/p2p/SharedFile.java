@@ -5,6 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
+@SuppressWarnings("unused")
 public class SharedFile {
 
 	private final String fileName;
@@ -14,6 +15,7 @@ public class SharedFile {
 	private final int pieceCount;
 	private final RandomAccessFile fileIO;
 
+	@SuppressWarnings("ResultOfMethodCallIgnored")
 	public SharedFile (String fileName, String fileDirectory, long fileSize, int pieceSize) throws IOException {
 		if (fileName == null || fileName.length() == 0) {
 			throw new IllegalArgumentException("Invalid fileName happens when creating SharedFile.");

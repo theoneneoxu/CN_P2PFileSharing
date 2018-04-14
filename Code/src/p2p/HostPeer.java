@@ -212,7 +212,7 @@ public class HostPeer extends Peer {
 			return;
 		}
 		synchronized (activeNeighborList) {
-			if (peerID < 0 || activeNeighborList.stream().filter(p -> p.getPeerID() == peerID).count() > 0) {
+			if (peerID < 0 || activeNeighborList.stream().anyMatch(p -> p.getPeerID() == peerID)) {
 				try {
 					socket.close();
 				}
@@ -246,7 +246,7 @@ public class HostPeer extends Peer {
 		private final int optimisticUnchokingInterval;	//in seconds
 		private final HostPeer hostPeer;
 		
-		PeerManager(HostPeer hostPeer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval) {
+		public PeerManager(HostPeer hostPeer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval) {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating NeighborSelector.");
 			}
@@ -309,6 +309,7 @@ public class HostPeer extends Peer {
 			//P2PLogger.log("[DEBUG] Thread exists for PeerManager.");
 		}
 
+		@SuppressWarnings("StringConcatenationInLoop")
 		private void selectPreferredNeighbors() {
 			List<NeighborPeer> oldPreferredList;
 			List<NeighborPeer> candidateList;
@@ -361,6 +362,7 @@ public class HostPeer extends Peer {
 			}
 		}
 		
+		@SuppressWarnings("StringConcatenationInLoop")
 		private void selectOptimisticNeighbors() {
 			List<NeighborPeer> oldOptimisticList;
 			List<NeighborPeer> candidateList;
@@ -426,7 +428,7 @@ public class HostPeer extends Peer {
 		private final Map<NeighborPeer, Integer> delayedRequestMessageMap;
 		private final Map<NeighborPeer, Integer> delayedPieceMessageMap;
 
-		SpeedLimiter(HostPeer hostPeer, int downloadingSpeedLimit, int uploadingSpeedLimit) {
+		public SpeedLimiter(HostPeer hostPeer, int downloadingSpeedLimit, int uploadingSpeedLimit) {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating SpeedLimiter.");
 			}
@@ -463,6 +465,7 @@ public class HostPeer extends Peer {
 					Thread.sleep(100);
 				}
 				catch (InterruptedException e) {
+					break;
 				}
 			}
 			//P2PLogger.log("[DEBUG] Thread exists for SpeedLimiter.");
@@ -537,7 +540,7 @@ public class HostPeer extends Peer {
 		private final HostPeer hostPeer;
 		private final ServerSocket serverSocket;
 
-		ConnectionListener(HostPeer hostPeer) throws IOException {
+		public ConnectionListener(HostPeer hostPeer) throws IOException {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating ConnectionHandler.");
 			}
@@ -596,7 +599,7 @@ public class HostPeer extends Peer {
 		private final ArrayList<Peer> knownPeerList;	//Known peers from config file. Host is responsible to initiate connection to these peers. Only used by ConnectionStarter.
 		private final List<Peer> connectingPeerList;
 
-		ConnectionStarter(HostPeer hostPeer, ArrayList<Peer> knownPeerList) {
+		public ConnectionStarter(HostPeer hostPeer, ArrayList<Peer> knownPeerList) {
 			if (hostPeer == null) {
 				throw new IllegalArgumentException("Invalid hostPeer happens when creating ConnectionHandler.");
 			}
@@ -638,6 +641,7 @@ public class HostPeer extends Peer {
 					Thread.sleep(3000);
 				}
 				catch (InterruptedException e) {
+					break;
 				}
 			}
 			//P2PLogger.log("[DEBUG] Thread exists for ConnectionStarter.");
@@ -648,7 +652,7 @@ public class HostPeer extends Peer {
 				return;
 			}
 
-			if (knownPeerList.stream().filter(p -> p.getPeerID() == peer.getPeerID()).count() > 0) {
+			if (knownPeerList.stream().anyMatch(p -> p.getPeerID() == peer.getPeerID())) {
 				synchronized (connectingPeerList) {
 					if (!connectingPeerList.contains(peer)) {
 						connectingPeerList.add(peer);
@@ -707,6 +711,7 @@ public class HostPeer extends Peer {
 		}
 		
 		//Returns 0 if sent.
+		@SuppressWarnings("UnusedReturnValue")
 		protected int sendHandshake(Socket socket, int hostPeerID) {
 			DataOutputStream output;
 			

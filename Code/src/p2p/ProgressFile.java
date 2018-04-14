@@ -12,6 +12,7 @@ public class ProgressFile {
 	private final int fileSize;
 	private final RandomAccessFile fileIO;
 	
+	@SuppressWarnings("ResultOfMethodCallIgnored")
 	public ProgressFile(String fileName, String fileDirectory, int fileSize) throws IOException {
 		if (fileName == null || fileName.length() == 0) {
 			throw new IllegalArgumentException("Invalid fileName happens when creating ProgressFile.");
@@ -71,6 +72,7 @@ public class ProgressFile {
 
 	//Returns 0 if writing is successful.
 	//Returns -1 if writing is not successful.
+	@SuppressWarnings("UnusedReturnValue")
 	public int writeFile(byte[] bytes) {
 		if (bytes == null || bytes.length > fileSize) {
 			P2PLogger.log("[" + getFilePath() + "] Invalid bytes happens when writing file.");
