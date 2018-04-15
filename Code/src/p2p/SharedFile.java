@@ -47,7 +47,7 @@ public class SharedFile {
 			fileIO.setLength(fileSize);
 		}
 		catch (FileNotFoundException e) {
-			P2PLogger.log("[" + getFilePath() + "] FileNotFoundException happens when openning or creating file.");
+			P2PLogger.log("[" + getFilePath() + "] FileNotFoundException happens when opening or creating file.");
 			throw e;
 		}
 		catch (IOException e) {

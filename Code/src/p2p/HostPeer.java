@@ -403,13 +403,13 @@ public class HostPeer extends Peer {
 			newOptimisticList.sort(Comparator.comparing(NeighborPeer::getPeerID));
 			if (!newOptimisticList.equals(oldOptimisticList)) {
 				if (newOptimisticList.isEmpty()) {
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " has no optimistical neighbors.");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " has no optimistic neighbors.");
 				} else {
 					String string = "";
 					for (NeighborPeer np : newOptimisticList) {
 						string += np.getPeerID() + ", ";
 					}
-					P2PLogger.log("Peer " + hostPeer.getPeerID() + " has the optimistical neighbor(s) " + string.substring(0, string.length() - 2) + ".");
+					P2PLogger.log("Peer " + hostPeer.getPeerID() + " has the optimistic neighbor(s) " + string.substring(0, string.length() - 2) + ".");
 				}
 			}
 		}
