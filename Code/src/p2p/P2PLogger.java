@@ -7,34 +7,34 @@ import java.time.format.DateTimeFormatter;
 
 public class P2PLogger {
 
-	private static PrintWriter fileIO;
-	
-	public P2PLogger(String fileName) {
-		if (fileName == null) {
-			throw new IllegalArgumentException("Invalid fileName happens when creating P2PLogger.");
-		}
+    private static PrintWriter fileIO;
 
-		try{
-			fileIO = new PrintWriter(fileName);
-		}
-		catch (FileNotFoundException e) {
-			fileIO = null;
-		}
-	}
+    public P2PLogger(String fileName) {
+        if (fileName == null) {
+            throw new IllegalArgumentException("Invalid fileName happens when creating P2PLogger.");
+        }
 
-	public static void log(String string) {
-		synchronized (fileIO) {
-			fileIO.println(getCurrentTime() + ": " + string);
-			fileIO.flush();
-		}
-	}
+        try{
+            fileIO = new PrintWriter(fileName);
+        }
+        catch (FileNotFoundException e) {
+            fileIO = null;
+        }
+    }
 
-	private static String getCurrentTime() {
-		return LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss.SSS"));
-	}
+    public static void log(String string) {
+        synchronized (fileIO) {
+            fileIO.println(getCurrentTime() + ": " + string);
+            fileIO.flush();
+        }
+    }
 
-	public void closeFile() {
-		fileIO.close();
-	}
-	
+    private static String getCurrentTime() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss.SSS"));
+    }
+
+    public void closeFile() {
+        fileIO.close();
+    }
+
 }
