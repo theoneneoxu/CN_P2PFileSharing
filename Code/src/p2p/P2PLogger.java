@@ -8,6 +8,11 @@ import java.time.format.DateTimeFormatter;
 public class P2PLogger {
 
     private static PrintWriter fileIO;
+    private static final Object fileIOLock;
+
+    static {
+        fileIOLock = new Object();
+    }
 
     public P2PLogger(String fileName) {
         if (fileName == null) {
@@ -23,7 +28,7 @@ public class P2PLogger {
     }
 
     public static void log(String string) {
-        synchronized (fileIO) {
+        synchronized (fileIOLock) {
             fileIO.println(getCurrentTime() + ": " + string);
             fileIO.flush();
         }

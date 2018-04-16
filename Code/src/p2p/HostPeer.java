@@ -64,7 +64,6 @@ public class HostPeer extends Peer {
         runningIndicator = true;
         pauseIndicator = false;
 
-        //to be changed to use thread pool
         new Thread(peerManager).start();
         new Thread(speedLimiter).start();
         new Thread(connectionListener).start();
@@ -270,7 +269,7 @@ public class HostPeer extends Peer {
 
         @Override
         public void run() {
-            int threadSleep = 1000;
+            int threadSleep = 200;
             long threadSleepCount = 0;
 
             while (hostPeer.isRunning()) {
@@ -300,7 +299,7 @@ public class HostPeer extends Peer {
                     Thread.sleep(threadSleep);
                 }
                 catch (InterruptedException e) {
-                    //P2PLogger.log("InterruptedException happens when sleeping PeerManager. Exception is not rethrown.");
+                    break;
                 }
                 threadSleepCount += threadSleep;
             }
@@ -445,13 +444,13 @@ public class HostPeer extends Peer {
                     snapshot = new HashMap<>(delayedRequestMessageMap);
                     delayedRequestMessageMap.clear();
                 }
-                snapshot.entrySet().forEach(e -> e.getKey().getMessageHandler().sendMessage(REQUEST, e.getValue()));    //Iterate over the copy due to sendMessage may add it back to the hash map.
+                snapshot.forEach((neighborPeer, pieceIndex) -> neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex));    //Iterate over the copy due to sendMessage may add it back to the hash map.
 
                 synchronized (delayedPieceMessageMap) {
                     snapshot = new HashMap<>(delayedPieceMessageMap);
                     delayedPieceMessageMap.clear();
                 }
-                snapshot.entrySet().forEach(e -> e.getKey().getMessageHandler().sendMessage(PIECE, e.getValue()));  //Iterate over the copy due to sendMessage may add it back to the hash map.
+                snapshot.forEach((neighborPeer, pieceIndex) -> neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex));      //Iterate over the copy due to sendMessage may add it back to the hash map.
 
                 try {
                     Thread.sleep(100);
@@ -606,35 +605,40 @@ public class HostPeer extends Peer {
 
         @Override
         public void run() {
+            int threadSleep = 200;
+            long threadSleepCount = 0;
             Socket socket;
 
             while (hostPeer.isRunning()) {
-                synchronized (connectingPeerList) {
-                    Iterator<Peer> iterator = connectingPeerList.iterator();
-                    while (iterator.hasNext()) {
-                        Peer peer = iterator.next();
-                        try {
-                            socket = new Socket(peer.getHostname(), peer.getPort());	//It would take about 1s to get IOException if unable to connect.
-                            //socket.setReceiveBufferSize(1024 * 1024);
-                            //socket.setSendBufferSize(1024 * 1024);
+                if (threadSleepCount % 3000 == 0) {
+                    synchronized (connectingPeerList) {
+                        Iterator<Peer> iterator = connectingPeerList.iterator();
+                        while (iterator.hasNext()) {
+                            Peer peer = iterator.next();
+                            try {
+                                socket = new Socket(peer.getHostname(), peer.getPort());	//It would take about 1s to get IOException if unable to connect.
+                                //socket.setReceiveBufferSize(1024 * 1024);
+                                //socket.setSendBufferSize(1024 * 1024);
+                            }
+                            catch (IOException e) {
+                                continue;	//Unable to connect. Pass this peer.
+                            }
+                            sendHandshake(socket, hostPeer.getPeerID());
+                            int peerID = verifyHandshake(socket);
+                            P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
+                            hostPeer.registerNeighbor(peerID, socket);
+                            iterator.remove();
                         }
-                        catch (IOException e) {
-                            continue;	//Unable to connect. Pass this peer.
-                        }
-                        sendHandshake(socket, hostPeer.getPeerID());
-                        int peerID = verifyHandshake(socket);
-                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
-                        hostPeer.registerNeighbor(peerID, socket);
-                        iterator.remove();
                     }
                 }
 
                 try {
-                    Thread.sleep(3000);
+                    Thread.sleep(threadSleep);
                 }
                 catch (InterruptedException e) {
                     break;
                 }
+                threadSleepCount += threadSleep;
             }
             //P2PLogger.log("[DEBUG] Thread exists for ConnectionStarter.");
         }

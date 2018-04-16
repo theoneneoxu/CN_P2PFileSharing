@@ -374,7 +374,7 @@ public class peerProcess {
                 if (threadSleepCount % 2000 == 0) {
                     displayConsoleOutput();
                 }
-                if (threadSleepCount % 2000 == 0) {
+                if (threadSleepCount % 2000 == 0) {     //Stop determination interval must be >= console display interval.
                     if (needToStopRunning()) {
                         hostPeer.stopRunning();
                         break;
