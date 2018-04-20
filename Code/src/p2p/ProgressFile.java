@@ -26,7 +26,7 @@ public class ProgressFile {
         this.fileSize = fileSize;
 
         File file = new File(fileDirectory, fileName);
-        if (file.isFile()) {	//Check if file exists and is a normal file, not a directory.
+        if (file.isFile()) {    //Check if file exists and is a normal file, not a directory.
             if (file.length() != fileSize) {
                 P2PLogger.log("[" + getFilePath() + "] File size is inconsistent. Reset size to " + fileSize + ".");
             }
@@ -35,14 +35,12 @@ public class ProgressFile {
         }
 
         try {
-            fileIO = new RandomAccessFile(file, "rw");	//Open or create the file;
+            fileIO = new RandomAccessFile(file, "rw");    //Open or create the file;
             fileIO.setLength(fileSize);
-        }
-        catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             P2PLogger.log("[" + getFilePath() + "] FileNotFoundException happens when opening or creating file.");
             throw e;
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             P2PLogger.log("[" + getFilePath() + "] IOException happens when setting file length.");
             closeFile();
             throw e;
@@ -62,8 +60,7 @@ public class ProgressFile {
                 fileIO.seek(0);
                 fileIO.readFully(bytes);
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             P2PLogger.log("[" + getFilePath() + "] IOException happens when reading file. Exception is not rethrown.");
             return new byte[0];
         }
@@ -86,8 +83,7 @@ public class ProgressFile {
                 fileIO.seek(bytes.length);
                 fileIO.write(new byte[fileSize - bytes.length]);
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             P2PLogger.log("[" + getFilePath() + "] IOException happens when writing file. Exception is not rethrown.");
             return -1;
         }
@@ -99,8 +95,7 @@ public class ProgressFile {
             synchronized (fileIO) {
                 fileIO.close();
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             P2PLogger.log("[" + getFilePath() + "] IOException happens when closing file. Exception is not rethrown.");
         }
     }

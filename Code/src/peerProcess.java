@@ -1,4 +1,5 @@
 import p2p.*;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -15,8 +16,8 @@ public class peerProcess {
 
     //Default common config settings.
     private String fileName = null;
-    private int fileSize = -1;
-    private int pieceSize = 65536;					//Best speed if using size around this value.
+    private long fileSize = -1;
+    private int pieceSize = 65536;                    //Best speed if using size around this value.
     private int preferredNeighborCount = 5;
     private int preferredUnchokingInterval = 10;
     private int optimisticNeighborCount = 1;
@@ -45,23 +46,22 @@ public class peerProcess {
         try {
             hostPeerID = Integer.parseInt(args[0]);
             switch (args.length) {
-            case 1:
-                downloadingSpeedLimit = -1;
-                uploadingSpeedLimit = -1;
-                break;
-            case 2:
-                downloadingSpeedLimit = Integer.parseInt(args[1]) * 1024;
-                uploadingSpeedLimit = -1;
-                break;
-            case 3:
-                downloadingSpeedLimit = Integer.parseInt(args[1]) * 1024;
-                uploadingSpeedLimit = Integer.parseInt(args[2]) * 1024;
-                break;
-            default:
-                return;
+                case 1:
+                    downloadingSpeedLimit = -1;
+                    uploadingSpeedLimit = -1;
+                    break;
+                case 2:
+                    downloadingSpeedLimit = Integer.parseInt(args[1]) * 1024;
+                    uploadingSpeedLimit = -1;
+                    break;
+                case 3:
+                    downloadingSpeedLimit = Integer.parseInt(args[1]) * 1024;
+                    uploadingSpeedLimit = Integer.parseInt(args[2]) * 1024;
+                    break;
+                default:
+                    return;
             }
-        }
-        catch (NumberFormatException e) {
+        } catch (NumberFormatException e) {
             System.out.println("Invalid parameter format. Must be number.");
             return;
         }
@@ -72,14 +72,13 @@ public class peerProcess {
 
         try {
             process = new peerProcess(hostPeerID, downloadingSpeedLimit, uploadingSpeedLimit);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             System.out.println("IOException happens when creating peerProcess.");
             return;
         }
 
         process.getHostPeer().startRunning();
-        process.getPeerMonitor().run();			//Main thread turns into monitor thread.
+        process.getPeerMonitor().run();            //Main thread turns into monitor thread.
         process.close();
     }
 
@@ -119,8 +118,7 @@ public class peerProcess {
                     knownPeerList,
                     downloadingSpeedLimit,
                     uploadingSpeedLimit);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             String string = "IOException happens when creating hostPeer.";
             P2PLogger.log(string);
             System.out.println(string);
@@ -135,8 +133,7 @@ public class peerProcess {
 
         try {
             commonConfigReader = new BufferedReader(new FileReader(commonConfigPath));
-        }
-        catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             String string = "File not found: \"" + commonConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
@@ -146,51 +143,47 @@ public class peerProcess {
             while ((line = commonConfigReader.readLine()) != null) {
                 String[] strings = line.split(" ");
                 if (strings.length >= 2) {
-                    switch(strings[0]) {
-                    case "NumberOfPreferredNeighbors":
-                        preferredNeighborCount = Integer.parseInt(strings[1]);
-                        break;
-                    case "UnchokingInterval":
-                        preferredUnchokingInterval = Integer.parseInt(strings[1]);
-                        break;
-                    case "NumberOfOptimisticNeighbors":
-                        optimisticNeighborCount = Integer.parseInt(strings[1]);
-                        break;
-                    case "OptimisticUnchokingInterval":
-                        optimisticUnchokingInterval = Integer.parseInt(strings[1]);
-                        break;
-                    case "FileName":
-                        fileName = strings[1];
-                        break;
-                    case "FileSize":
-                        fileSize = Integer.parseInt(strings[1]);
-                        break;
-                    case "PieceSize":
-                        pieceSize = Integer.parseInt(strings[1]);
-                        break;
-                    default:
-                        break;
+                    switch (strings[0]) {
+                        case "NumberOfPreferredNeighbors":
+                            preferredNeighborCount = Integer.parseInt(strings[1]);
+                            break;
+                        case "UnchokingInterval":
+                            preferredUnchokingInterval = Integer.parseInt(strings[1]);
+                            break;
+                        case "NumberOfOptimisticNeighbors":
+                            optimisticNeighborCount = Integer.parseInt(strings[1]);
+                            break;
+                        case "OptimisticUnchokingInterval":
+                            optimisticUnchokingInterval = Integer.parseInt(strings[1]);
+                            break;
+                        case "FileName":
+                            fileName = strings[1];
+                            break;
+                        case "FileSize":
+                            fileSize = Long.parseLong(strings[1]);
+                            break;
+                        case "PieceSize":
+                            pieceSize = Integer.parseInt(strings[1]);
+                            break;
+                        default:
+                            break;
                     }
                 }
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             String string = "IOException happens when loading \"" + commonConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
             return -1;
-        }
-        catch (NumberFormatException e) {
+        } catch (NumberFormatException e) {
             String string = "NumberFormatException happens when loading \"" + commonConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
             return -1;
-        }
-        finally {
+        } finally {
             try {
                 commonConfigReader.close();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 String string = "IOException happens when closing commonConfigReader.";
                 P2PLogger.log(string);
                 System.out.println(string);
@@ -249,8 +242,7 @@ public class peerProcess {
 
         try {
             peerInformationConfigReader = new BufferedReader(new FileReader(peerInformationConfigPath));
-        }
-        catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             String string = "File not found: \"" + peerInformationConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
@@ -263,7 +255,7 @@ public class peerProcess {
                     Peer peer = new Peer(Integer.parseInt(strings[0]),
                             strings[1],
                             Integer.parseInt(strings[2]),
-                            (fileSize + pieceSize - 1) / pieceSize,
+                            (int) ((fileSize + pieceSize - 1) / pieceSize),
                             strings[3].equals("1"));
                     peerList.add(peer);
                     if (peer.getPeerID() == hostPeerID) {
@@ -271,30 +263,25 @@ public class peerProcess {
                     }
                 }
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             String string = "IOException happens when loading \"" + peerInformationConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
             return -1;
-        }
-        catch (NumberFormatException e) {
+        } catch (NumberFormatException e) {
             String string = "NumberFormatException happens when loading \"" + peerInformationConfigPath + "\".";
             P2PLogger.log(string);
             System.out.println(string);
             return -1;
-        }
-        catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             String string = "IllegalArgumentException happens when loading \"" + peerInformationConfigPath + "\". " + e.getMessage();
             P2PLogger.log(string);
             System.out.println(string);
             return -1;
-        }
-        finally {
+        } finally {
             try {
                 peerInformationConfigReader.close();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 String string = "IOException happens when closing peerInformationConfigReader.";
                 P2PLogger.log(string);
                 System.out.println(string);
@@ -317,9 +304,9 @@ public class peerProcess {
         }
 
         String progressFileName = fileName + ".bitfield";
-        boolean hasFile = new File(fileDirectory, progressFileName).isFile();	//Check if file exists and is a normal file, not a directory.
-        ProgressFile progressFile = new ProgressFile(progressFileName, fileDirectory, (peer.getPieceCount() + 7) / 8);	//Open or create progress file.
-        if(hasFile) {
+        boolean hasFile = new File(fileDirectory, progressFileName).isFile();    //Check if file exists and is a normal file, not a directory.
+        ProgressFile progressFile = new ProgressFile(progressFileName, fileDirectory, (peer.getPieceCount() + 7) / 8);    //Open or create progress file.
+        if (hasFile) {
             peer.setPieceStatus(progressFile.readFile());
         }
         return progressFile;
@@ -383,8 +370,7 @@ public class peerProcess {
 
                 try {
                     Thread.sleep(threadSleep);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     break;
                 }
                 threadSleepCount += threadSleep;
@@ -392,19 +378,14 @@ public class peerProcess {
 
             try {
                 consoleReader.close();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
             }
         }
 
         private boolean needToStopRunning() {
             int count = hostPeer.hasCompleteFile() ? 1 : 0;
-            synchronized (hostPeer.getActiveNeighborList()) {
-                count += hostPeer.getActiveNeighborList().stream().filter(p -> p.hasCompleteFile()).count();
-            }
-            synchronized (hostPeer.getInactiveNeighborList()) {
-                count += hostPeer.getInactiveNeighborList().stream().filter(p -> p.hasCompleteFile()).count();
-            }
+            count += hostPeer.getActiveNeighborList().stream().filter(p -> p.hasCompleteFile()).count();
+            count += hostPeer.getInactiveNeighborList().stream().filter(p -> p.hasCompleteFile()).count();
             return count == peerCount;
         }
 
@@ -415,8 +396,7 @@ public class peerProcess {
                 if (consoleReader.ready()) {
                     inputString = consoleReader.readLine();
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
             }
             if (inputString == null || inputString.length() == 0) {
                 return;
@@ -424,78 +404,71 @@ public class peerProcess {
 
             String stringArray[] = inputString.split(" ");
             switch (stringArray[0].toLowerCase()) {
-            case "e":
-            case "exit":
-                hostPeer.stopRunning();
-                return;
-            case "p":
-            case "pause":
-                if (!hostPeer.isPaused()) {
-                    hostPeer.pauseRunning();
-                }
-                return;
-            case "r":
-            case "resume":
-                if (hostPeer.isPaused()) {
-                    hostPeer.resumeRunning();
-                }
-                return;
-            case "d":
-            case "download":
-                if (hostPeer.isPaused()) {
-                    hostPeer.resumeRunning();
-                }
-                if (stringArray.length == 1) {
-                    hostPeer.changeDownloadingSpeedLimit(-1);
-                } else if (stringArray.length == 2) {
-                    try {
-                        int limit = Integer.parseInt(stringArray[1]);
-                        hostPeer.changeDownloadingSpeedLimit(limit * 1024);
+                case "e":
+                case "exit":
+                    hostPeer.stopRunning();
+                    return;
+                case "p":
+                case "pause":
+                    if (!hostPeer.isPaused()) {
+                        hostPeer.pauseRunning();
                     }
-                    catch (NumberFormatException e) {
+                    return;
+                case "r":
+                case "resume":
+                    if (hostPeer.isPaused()) {
+                        hostPeer.resumeRunning();
                     }
-                }
-                return;
-            case "u":
-            case "upload":
-                if (hostPeer.isPaused()) {
-                    hostPeer.resumeRunning();
-                }
-                if (stringArray.length == 1) {
-                    hostPeer.changeUploadingSpeedLimit(-1);
-                } else if (stringArray.length == 2) {
-                    try {
-                        int limit = Integer.parseInt(stringArray[1]);
-                        hostPeer.changeUploadingSpeedLimit(limit * 1024);
+                    return;
+                case "d":
+                case "download":
+                    if (hostPeer.isPaused()) {
+                        hostPeer.resumeRunning();
                     }
-                    catch (NumberFormatException e) {
+                    if (stringArray.length == 1) {
+                        hostPeer.changeDownloadingSpeedLimit(-1);
+                    } else if (stringArray.length == 2) {
+                        try {
+                            int limit = Integer.parseInt(stringArray[1]);
+                            hostPeer.changeDownloadingSpeedLimit(limit * 1024);
+                        } catch (NumberFormatException e) {
+                        }
                     }
-                }
-                return;
-            case "h":
-            case "help":
-                showHelp = !showHelp;
-                return;
-            default:
-                break;
+                    return;
+                case "u":
+                case "upload":
+                    if (hostPeer.isPaused()) {
+                        hostPeer.resumeRunning();
+                    }
+                    if (stringArray.length == 1) {
+                        hostPeer.changeUploadingSpeedLimit(-1);
+                    } else if (stringArray.length == 2) {
+                        try {
+                            int limit = Integer.parseInt(stringArray[1]);
+                            hostPeer.changeUploadingSpeedLimit(limit * 1024);
+                        } catch (NumberFormatException e) {
+                        }
+                    }
+                    return;
+                case "h":
+                case "help":
+                    showHelp = !showHelp;
+                    return;
+                default:
+                    break;
             }
 
             try {
                 int peerID = Integer.parseInt(inputString);
                 Peer peer = peerID == hostPeer.getPeerID() ? hostPeer : null;
                 if (peer == null) {
-                    synchronized (hostPeer.getActiveNeighborList()) {
-                        peer = hostPeer.getActiveNeighborList().stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
-                    }
+                    peer = hostPeer.getActiveNeighborList().stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
                 }
                 if (peer == null) {
-                    synchronized (hostPeer.getInactiveNeighborList()) {
-                        peer = hostPeer.getInactiveNeighborList().stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
-                    }
+                    peer = hostPeer.getInactiveNeighborList().stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
                 }
                 showDetailPeer = peer;
-            }
-            catch (NumberFormatException e) {
+            } catch (NumberFormatException e) {
             }
         }
 
@@ -545,8 +518,7 @@ public class peerProcess {
             if (osName.contains("windows")) {
                 try {
                     new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
-                }
-                catch (InterruptedException | IOException e) {
+                } catch (InterruptedException | IOException e) {
                     return -1;
                 }
             } else if (osName.contains("linux") || osName.contains("unix")) {
@@ -568,54 +540,50 @@ public class peerProcess {
             string += "Piece Count: " + hostPeer.getSharedFile().getPieceCount() + "    ";
             string += "Download Limit: " + (hostPeer.getSpeedLimiter().getDownloadingSpeedLimit() >= 0 ? getSizeString(hostPeer.getSpeedLimiter().getDownloadingSpeedLimit()) + "/s per Neighbor" : "No Limit") + "    ";
             string += "Upload Limit: " + (hostPeer.getSpeedLimiter().getUploadingSpeedLimit() >= 0 ? getSizeString(hostPeer.getSpeedLimiter().getUploadingSpeedLimit()) + "/s per Neighbor" : "No Limit");
-            string +=  "\n";
+            string += "\n";
             return string;
         }
 
         @SuppressWarnings("StringConcatenationInLoop")
         private String getPeerTable() {
             ArrayList<NeighborInfo> activeNeighborInfoList = new ArrayList<>();
-            synchronized (hostPeer.getActiveNeighborList()) {
-                for (NeighborPeer np : hostPeer.getActiveNeighborList()) {
-                    NeighborInfo neighborInfo = new NeighborInfo();
-                    neighborInfo.peerID = np.getPeerID();
-                    neighborInfo.progressPercentage = np.getCompletePieceCount() * 100 / np.getPieceCount();
-                    neighborInfo.downloadSpeed = np.isUnchokedHost() ? np.getSentToHostSubRate() : 0;
-                    neighborInfo.uploadSpeed = np.isUnchokedByHost() ? np.getReceivedFromHostSubRate() : 0;
-                    if (np.isPreferredByHost() && np.isOptimisticByHost()) {
-                        neighborInfo.selectedByHost = "P O";
-                    } else if (np.isPreferredByHost()) {
-                        neighborInfo.selectedByHost = "P  ";
-                    } else if (np.isOptimisticByHost()) {
-                        neighborInfo.selectedByHost = "O  ";
-                    } else {
-                        neighborInfo.selectedByHost = "   ";
-                    }
-                    neighborInfo.unchokedHost = np.isUnchokedHost() ? "Yes" : "   ";
-                    neighborInfo.interestOfHost = np.isPreviousInterestOfHost() ? "Yes" : "   ";
-                    neighborInfo.interestedInHost = np.isInterestedInHost() ? "Yes" : "   ";
-                    neighborInfo.totalDownload = np.getSentToHostTotalCount();
-                    neighborInfo.totalUpload = np.getReceivedFromHostTotalCount();
-                    activeNeighborInfoList.add(neighborInfo);
+            for (NeighborPeer np : hostPeer.getActiveNeighborList()) {
+                NeighborInfo neighborInfo = new NeighborInfo();
+                neighborInfo.peerID = np.getPeerID();
+                neighborInfo.progressPercentage = np.getCompletePieceCount() * 100 / np.getPieceCount();
+                neighborInfo.downloadSpeed = np.isUnchokedHost() ? np.getSentToHostSubRate() : 0;
+                neighborInfo.uploadSpeed = np.isUnchokedByHost() ? np.getReceivedFromHostSubRate() : 0;
+                if (np.isPreferredByHost() && np.isOptimisticByHost()) {
+                    neighborInfo.selectedByHost = "P O";
+                } else if (np.isPreferredByHost()) {
+                    neighborInfo.selectedByHost = "P  ";
+                } else if (np.isOptimisticByHost()) {
+                    neighborInfo.selectedByHost = "O  ";
+                } else {
+                    neighborInfo.selectedByHost = "   ";
                 }
+                neighborInfo.unchokedHost = np.isUnchokedHost() ? "Yes" : "   ";
+                neighborInfo.interestOfHost = np.isPreviousInterestOfHost() ? "Yes" : "   ";
+                neighborInfo.interestedInHost = np.isInterestedInHost() ? "Yes" : "   ";
+                neighborInfo.totalDownload = np.getSentToHostTotalCount();
+                neighborInfo.totalUpload = np.getReceivedFromHostTotalCount();
+                activeNeighborInfoList.add(neighborInfo);
             }
 
             ArrayList<NeighborInfo> inactiveNeighborInfoList = new ArrayList<>();
-            synchronized (hostPeer.getInactiveNeighborList()) {
-                for (NeighborPeer np : hostPeer.getInactiveNeighborList()) {
-                    NeighborInfo neighborInfo = new NeighborInfo();
-                    neighborInfo.peerID = np.getPeerID();
-                    neighborInfo.progressPercentage = np.getCompletePieceCount() * 100 / np.getPieceCount();
-                    neighborInfo.downloadSpeed = 0;
-                    neighborInfo.uploadSpeed = 0;
-                    neighborInfo.selectedByHost = "   ";
-                    neighborInfo.unchokedHost = "   ";
-                    neighborInfo.interestOfHost = "   ";
-                    neighborInfo.interestedInHost = "   ";
-                    neighborInfo.totalDownload = np.getSentToHostTotalCount();
-                    neighborInfo.totalUpload = np.getReceivedFromHostTotalCount();
-                    inactiveNeighborInfoList.add(neighborInfo);
-                }
+            for (NeighborPeer np : hostPeer.getInactiveNeighborList()) {
+                NeighborInfo neighborInfo = new NeighborInfo();
+                neighborInfo.peerID = np.getPeerID();
+                neighborInfo.progressPercentage = np.getCompletePieceCount() * 100 / np.getPieceCount();
+                neighborInfo.downloadSpeed = 0;
+                neighborInfo.uploadSpeed = 0;
+                neighborInfo.selectedByHost = "   ";
+                neighborInfo.unchokedHost = "   ";
+                neighborInfo.interestOfHost = "   ";
+                neighborInfo.interestedInHost = "   ";
+                neighborInfo.totalDownload = np.getSentToHostTotalCount();
+                neighborInfo.totalUpload = np.getReceivedFromHostTotalCount();
+                inactiveNeighborInfoList.add(neighborInfo);
             }
 
             HostInfo hostInfo = new HostInfo();
@@ -623,10 +591,10 @@ public class peerProcess {
             hostInfo.progressPercentage = hostPeer.getCompletePieceCount() * 100 / hostPeer.getPieceCount();
             hostInfo.downloadSpeed = activeNeighborInfoList.stream().mapToLong(n -> n.downloadSpeed).sum();
             hostInfo.uploadSpeed = activeNeighborInfoList.stream().mapToLong(n -> n.uploadSpeed).sum();
-            hostInfo.selectedByHostCount = (int)activeNeighborInfoList.stream().filter(n -> !n.selectedByHost.equals("   ")).count();
-            hostInfo.unchokedHostCount = (int)activeNeighborInfoList.stream().filter(n -> n.unchokedHost.equals("Yes")).count();
-            hostInfo.interestOfHostCount = (int)activeNeighborInfoList.stream().filter(n -> n.interestOfHost.equals("Yes")).count();
-            hostInfo.interestedInHostCount = (int)activeNeighborInfoList.stream().filter(n -> n.interestedInHost.equals("Yes")).count();
+            hostInfo.selectedByHostCount = (int) activeNeighborInfoList.stream().filter(n -> !n.selectedByHost.equals("   ")).count();
+            hostInfo.unchokedHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.unchokedHost.equals("Yes")).count();
+            hostInfo.interestOfHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.interestOfHost.equals("Yes")).count();
+            hostInfo.interestedInHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.interestedInHost.equals("Yes")).count();
             hostInfo.totalDownload = activeNeighborInfoList.stream().mapToLong(n -> n.totalDownload).sum() + inactiveNeighborInfoList.stream().mapToLong(n -> n.totalDownload).sum();
             hostInfo.totalUpload = activeNeighborInfoList.stream().mapToLong(n -> n.totalUpload).sum() + inactiveNeighborInfoList.stream().mapToLong(n -> n.totalUpload).sum();
 

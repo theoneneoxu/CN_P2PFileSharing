@@ -19,10 +19,9 @@ public class P2PLogger {
             throw new IllegalArgumentException("Invalid fileName happens when creating P2PLogger.");
         }
 
-        try{
+        try {
             fileIO = new PrintWriter(fileName);
-        }
-        catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             fileIO = null;
         }
     }

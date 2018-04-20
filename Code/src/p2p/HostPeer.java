@@ -1,6 +1,7 @@
 package p2p;
 
 import static p2p.Peer.MessageType.*;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -9,15 +10,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 
 public class HostPeer extends Peer {
@@ -32,12 +30,13 @@ public class HostPeer extends Peer {
     private final SpeedLimiter speedLimiter;
     private final ConnectionListener connectionListener;
     private final ConnectionStarter connectionStarter;
+    private final ArrayList<Peer> knownPeerList;
     private final List<NeighborPeer> activeNeighborList;
     private final List<NeighborPeer> inactiveNeighborList;
     private final ExecutorService neighborThreadPool;
 
     public HostPeer(Peer peer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval,
-            SharedFile sharedFile, ProgressFile progressFile, ArrayList<Peer> knownPeerList, int downloadingSpeedLimit, int uploadingSpeedLimit) throws IOException {
+                    SharedFile sharedFile, ProgressFile progressFile, ArrayList<Peer> knownPeerList, int downloadingSpeedLimit, int uploadingSpeedLimit) throws IOException {
         super(peer);
 
         if (sharedFile == null) {
@@ -46,17 +45,21 @@ public class HostPeer extends Peer {
         if (progressFile == null) {
             throw new IllegalArgumentException("Invalid progressFile happens when creating HostPeer.");
         }
+        if (knownPeerList == null) {
+            throw new IllegalArgumentException("Invalid knownPeerList happens when creating HostPeer.");
+        }
 
         this.downloadingSpeedLimit = downloadingSpeedLimit;
         this.uploadingSpeedLimit = uploadingSpeedLimit;
         this.sharedFile = sharedFile;
         this.progressFile = progressFile;
+        this.knownPeerList = knownPeerList;
         peerManager = new PeerManager(this, preferredNeighborCount, preferredUnchokingInterval, optimisticNeighborCount, optimisticUnchokingInterval);
         speedLimiter = new SpeedLimiter(this, downloadingSpeedLimit, uploadingSpeedLimit);
         connectionListener = new ConnectionListener(this);
         connectionStarter = new ConnectionStarter(this, knownPeerList);
-        activeNeighborList = Collections.synchronizedList(new ArrayList<>());
-        inactiveNeighborList = Collections.synchronizedList(new ArrayList<>());
+        activeNeighborList = new CopyOnWriteArrayList<>();
+        inactiveNeighborList = new CopyOnWriteArrayList<>();
         neighborThreadPool = Executors.newFixedThreadPool(10);
     }
 
@@ -76,16 +79,13 @@ public class HostPeer extends Peer {
         //Wait a while before close sockets. There may be ongoing processing like neighbor listener sending message via output stream.
         try {
             Thread.sleep(1000);
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             P2PLogger.log("InterruptedException happens when stop running host peer. Exception is not rethrown.");
         }
 
         //Close sockets to force threads to get out of blocking on input stream.
         connectionListener.closeSocket();
-        synchronized (activeNeighborList) {
-            activeNeighborList.forEach(p -> p.getMessageHandler().closeSocket());
-        }
+        activeNeighborList.forEach(p -> p.getMessageHandler().closeSocket());
 
         //Shutdown thread pool.
         neighborThreadPool.shutdown();
@@ -94,8 +94,7 @@ public class HostPeer extends Peer {
                 neighborThreadPool.shutdownNow();
                 //P2PLogger.log("Neighbor Thread Pool did not terminate in 1s. Forced to shutdown.");
             }
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             neighborThreadPool.shutdownNow();
             String string = "Neighbor Thread Pool shutdown waiting is interrupted. Forced to shutdown.";
             P2PLogger.log(string);
@@ -140,10 +139,6 @@ public class HostPeer extends Peer {
         return sharedFile;
     }
 
-    public ConnectionStarter getConnectionStarter() {
-        return connectionStarter;
-    }
-
     public SpeedLimiter getSpeedLimiter() {
         return speedLimiter;
     }
@@ -167,15 +162,13 @@ public class HostPeer extends Peer {
         ArrayList<BitSet> bitSetList = new ArrayList<>();
 
         synchronized (getPieceStatus()) {
-            bitSetList.add((BitSet)getPieceStatus().clone());
+            bitSetList.add((BitSet) getPieceStatus().clone());
         }
-        synchronized (activeNeighborList) {
-            for (NeighborPeer np : activeNeighborList) {
-                synchronized (np.getPieceStatus()) {
-                    bitSetList.add((BitSet)np.getPieceStatus().clone());
-                }
+        activeNeighborList.forEach(p -> {
+            synchronized (p.getPieceStatus()) {
+                bitSetList.add((BitSet) p.getPieceStatus().clone());
             }
-        }
+        });
 
         int countArray[] = new int[getPieceCount()];
         for (BitSet bitSet : bitSetList) {
@@ -208,39 +201,45 @@ public class HostPeer extends Peer {
         if (socket == null) {
             return;
         }
-        synchronized (activeNeighborList) {
-            if (peerID < 0 || activeNeighborList.stream().anyMatch(p -> p.getPeerID() == peerID)) {
-                try {
-                    socket.close();
-                }
-                catch (IOException e) {
-                    P2PLogger.log("IOException happens when closing socket in registerNeighbor. Exception is not rethrown.");
-                }
-                return;
+        if (peerID < 0 || activeNeighborList.stream().anyMatch(p -> p.getPeerID() == peerID)) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                P2PLogger.log("IOException happens when closing socket in registerNeighbor. Exception is not rethrown.");
             }
+            return;
         }
 
-        synchronized (inactiveNeighborList) {
-            neighborPeer = inactiveNeighborList.stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
-            inactiveNeighborList.remove(neighborPeer);
-        }
+        neighborPeer = inactiveNeighborList.stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
+        inactiveNeighborList.remove(neighborPeer);
         if (neighborPeer == null) {
             neighborPeer = new NeighborPeer(peerID, this, socket);
         } else {
             neighborPeer.reactivatePeer(socket);
         }
-        neighborPeer.getMessageHandler().sendMessage(BITFIELD);
         activeNeighborList.add(neighborPeer);
         neighborThreadPool.execute(neighborPeer.getMessageHandler());
-        //new Thread(neighborPeer.getMessageHandler()).start();
+        neighborPeer.getMessageHandler().sendMessage(BITFIELD);         //Once registered, send bitfield to neighbor.
+    }
+
+    public void deregisterNeighbor(NeighborPeer neighborPeer) {
+        if (neighborPeer == null) {
+            return;
+        }
+
+        activeNeighborList.remove(neighborPeer);
+        inactiveNeighborList.add(neighborPeer);
+        if (knownPeerList.stream().anyMatch(p -> p.getPeerID() == neighborPeer.getPeerID())) {      //If host is responsible for making connection to the neighbor, then add it to starter.
+            connectionStarter.addConnectingPeer(neighborPeer);
+        }
     }
 
     private class PeerManager implements Runnable {
 
         private final int preferredNeighborCount;
-        private final int preferredUnchokingInterval;	//in seconds
+        private final int preferredUnchokingInterval;    //in seconds
         private final int optimisticNeighborCount;
-        private final int optimisticUnchokingInterval;	//in seconds
+        private final int optimisticUnchokingInterval;    //in seconds
         private final HostPeer hostPeer;
 
         public PeerManager(HostPeer hostPeer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval) {
@@ -275,13 +274,11 @@ public class HostPeer extends Peer {
             while (hostPeer.isRunning()) {
                 if (hostPeer.isPaused()) {
                     if (threadSleepCount % 1000 == 0) {
-                        synchronized (hostPeer.getActiveNeighborList()) {
-                            hostPeer.getActiveNeighborList().forEach(p -> {
-                                p.setPreferredByHost(false);
-                                p.setOptimisticByHost(false);
-                                p.resetSubCount();
-                            });
-                        }
+                        hostPeer.getActiveNeighborList().forEach(p -> {
+                            p.setPreferredByHost(false);
+                            p.setOptimisticByHost(false);
+                            p.resetSubCount();
+                        });
                     }
                 } else {
                     if (threadSleepCount / 1000 % preferredUnchokingInterval == 0) {
@@ -297,8 +294,7 @@ public class HostPeer extends Peer {
 
                 try {
                     Thread.sleep(threadSleep);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     break;
                 }
                 threadSleepCount += threadSleep;
@@ -308,39 +304,35 @@ public class HostPeer extends Peer {
 
         @SuppressWarnings("StringConcatenationInLoop")
         private void selectPreferredNeighbors() {
-            List<NeighborPeer> oldPreferredList;
             List<NeighborPeer> candidateList;
 
-            synchronized (hostPeer.getActiveNeighborList()) {
-                oldPreferredList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isPreferredByHost()).collect(Collectors.toList());
-                if (hostPeer.hasCompleteFile()) {
-                    candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost() && !p.isOptimisticByHost()).collect(Collectors.toList());
-                    Collections.shuffle(candidateList);
-                } else {
-                    candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost()).collect(Collectors.toList());
-                    candidateList.sort(Comparator.comparing(NeighborPeer::getSentToHostSubRate).reversed());
-                }
-                hostPeer.getActiveNeighborList().forEach(p -> p.resetSubCount());
+            List<NeighborPeer> oldPreferredList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isPreferredByHost()).collect(Collectors.toList());
+            if (hostPeer.hasCompleteFile()) {
+                candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost() && !p.isOptimisticByHost()).collect(Collectors.toList());
+                Collections.shuffle(candidateList);
+            } else {
+                candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost()).collect(Collectors.toList());
+                candidateList.sort(Comparator.comparing(NeighborPeer::getSentToHostSubRate).reversed());
             }
-
+            hostPeer.getActiveNeighborList().forEach(p -> p.resetSubCount());
             ArrayList<NeighborPeer> newPreferredList = new ArrayList<>(candidateList.subList(0, Math.min(preferredNeighborCount, candidateList.size())));
 
-            for (NeighborPeer np : oldPreferredList) {
-                if (!newPreferredList.contains(np)) {
-                    np.setPreferredByHost(false);
-                    if (!np.isOptimisticByHost()) {
-                        np.getMessageHandler().sendMessage(CHOKE);
+            oldPreferredList.forEach(p -> {
+                if (!newPreferredList.contains(p)) {
+                    p.setPreferredByHost(false);
+                    if (!p.isOptimisticByHost()) {
+                        p.getMessageHandler().sendMessage(CHOKE);
                     }
                 }
-            }
-            for (NeighborPeer np : newPreferredList) {
-                if (!oldPreferredList.contains(np)) {
-                    np.setPreferredByHost(true);
-                    if (!np.isOptimisticByHost()) {
-                        np.getMessageHandler().sendMessage(UNCHOKE);
+            });
+            newPreferredList.forEach(p -> {
+                if (!oldPreferredList.contains(p)) {
+                    p.setPreferredByHost(true);
+                    if (!p.isOptimisticByHost()) {
+                        p.getMessageHandler().sendMessage(UNCHOKE);
                     }
                 }
-            }
+            });
 
             oldPreferredList.sort(Comparator.comparing(NeighborPeer::getPeerID));
             newPreferredList.sort(Comparator.comparing(NeighborPeer::getPeerID));
@@ -359,13 +351,8 @@ public class HostPeer extends Peer {
 
         @SuppressWarnings("StringConcatenationInLoop")
         private void selectOptimisticNeighbors() {
-            List<NeighborPeer> oldOptimisticList;
-            List<NeighborPeer> candidateList;
-
-            synchronized (hostPeer.getActiveNeighborList()) {
-                oldOptimisticList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isOptimisticByHost()).collect(Collectors.toList());
-                candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost() && !p.isUnchokedByHost()).collect(Collectors.toList());
-            }
+            List<NeighborPeer> oldOptimisticList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isOptimisticByHost()).collect(Collectors.toList());
+            List<NeighborPeer> candidateList = hostPeer.getActiveNeighborList().stream().filter(p -> p.isInterestedInHost() && !p.isUnchokedByHost()).collect(Collectors.toList());
             Collections.shuffle(candidateList);
 
             ArrayList<NeighborPeer> newOptimisticList = new ArrayList<>(candidateList.subList(0, Math.min(optimisticNeighborCount, candidateList.size())));
@@ -377,22 +364,22 @@ public class HostPeer extends Peer {
                 newOptimisticList.addAll(secondaryCandidateList.subList(0, Math.min(remainingCount, secondaryCandidateList.size())));
             }
 
-            for (NeighborPeer np : oldOptimisticList) {
-                if (!newOptimisticList.contains(np)) {
-                    np.setOptimisticByHost(false);
-                    if (!np.isPreferredByHost()) {
-                        np.getMessageHandler().sendMessage(CHOKE);
+            oldOptimisticList.forEach(p -> {
+                if (!newOptimisticList.contains(p)) {
+                    p.setOptimisticByHost(false);
+                    if (!p.isPreferredByHost()) {
+                        p.getMessageHandler().sendMessage(CHOKE);
                     }
                 }
-            }
-            for (NeighborPeer np : newOptimisticList) {
-                if (!oldOptimisticList.contains(np)) {
-                    np.setOptimisticByHost(true);
-                    if (!np.isPreferredByHost()) {
-                        np.getMessageHandler().sendMessage(UNCHOKE);
+            });
+            newOptimisticList.forEach(p -> {
+                if (!oldOptimisticList.contains(p)) {
+                    p.setOptimisticByHost(true);
+                    if (!p.isPreferredByHost()) {
+                        p.getMessageHandler().sendMessage(UNCHOKE);
                     }
                 }
-            }
+            });
 
             oldOptimisticList.sort(Comparator.comparing(NeighborPeer::getPeerID));
             newOptimisticList.sort(Comparator.comparing(NeighborPeer::getPeerID));
@@ -420,8 +407,8 @@ public class HostPeer extends Peer {
         private volatile int downloadingSpeedLimit;
         private volatile int uploadingSpeedLimit;
         private final HostPeer hostPeer;
-        private final Map<NeighborPeer, Integer> delayedRequestMessageMap;
-        private final Map<NeighborPeer, Integer> delayedPieceMessageMap;
+        private final ConcurrentHashMap<NeighborPeer, Integer> delayedRequestMessageMap;
+        private final ConcurrentHashMap<NeighborPeer, Integer> delayedPieceMessageMap;
 
         public SpeedLimiter(HostPeer hostPeer, int downloadingSpeedLimit, int uploadingSpeedLimit) {
             if (hostPeer == null) {
@@ -431,31 +418,40 @@ public class HostPeer extends Peer {
             this.hostPeer = hostPeer;
             this.downloadingSpeedLimit = downloadingSpeedLimit;
             this.uploadingSpeedLimit = uploadingSpeedLimit;
-            delayedRequestMessageMap = Collections.synchronizedMap(new HashMap<>());
-            delayedPieceMessageMap = Collections.synchronizedMap(new HashMap<>());
+            delayedRequestMessageMap = new ConcurrentHashMap<>();
+            delayedPieceMessageMap = new ConcurrentHashMap<>();
         }
 
         @Override
         public void run() {
-            HashMap<NeighborPeer, Integer> snapshot;
+            Iterator<Map.Entry<NeighborPeer, Integer>> iterator;
 
             while (hostPeer.isRunning()) {
-                synchronized (delayedRequestMessageMap) {
-                    snapshot = new HashMap<>(delayedRequestMessageMap);
-                    delayedRequestMessageMap.clear();
+                iterator = delayedRequestMessageMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<NeighborPeer, Integer> entry = iterator.next();
+                    NeighborPeer neighborPeer = entry.getKey();
+                    int pieceIndex = entry.getValue();
+                    if (!neighborPeer.hasReachedDownloadingLimit()) {
+                        neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex);
+                        iterator.remove();
+                    }
                 }
-                snapshot.forEach((neighborPeer, pieceIndex) -> neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex));    //Iterate over the copy due to sendMessage may add it back to the hash map.
 
-                synchronized (delayedPieceMessageMap) {
-                    snapshot = new HashMap<>(delayedPieceMessageMap);
-                    delayedPieceMessageMap.clear();
+                iterator = delayedPieceMessageMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<NeighborPeer, Integer> entry = iterator.next();
+                    NeighborPeer neighborPeer = entry.getKey();
+                    int pieceIndex = entry.getValue();
+                    if (!neighborPeer.hasReachedUploadingLimit()) {
+                        neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex);
+                        iterator.remove();
+                    }
                 }
-                snapshot.forEach((neighborPeer, pieceIndex) -> neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex));      //Iterate over the copy due to sendMessage may add it back to the hash map.
 
                 try {
                     Thread.sleep(100);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     break;
                 }
             }
@@ -501,8 +497,7 @@ public class HostPeer extends Peer {
 
             if (downloadingSpeedLimit == 0) {
                 return true;
-            }
-            else if (downloadingSpeedLimit < 0) {
+            } else if (downloadingSpeedLimit < 0) {
                 return false;
             } else {
                 return neighborPeer.getSentToHostSubRate() > downloadingSpeedLimit;
@@ -516,8 +511,7 @@ public class HostPeer extends Peer {
 
             if (uploadingSpeedLimit == 0) {
                 return true;
-            }
-            else if (uploadingSpeedLimit < 0) {
+            } else if (uploadingSpeedLimit < 0) {
                 return false;
             } else {
                 return neighborPeer.getReceivedFromHostSubRate() > uploadingSpeedLimit;
@@ -539,8 +533,7 @@ public class HostPeer extends Peer {
             this.hostPeer = hostPeer;
             try {
                 serverSocket = new ServerSocket(hostPeer.getPort());
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when creating ConnectionHandler.");
                 throw e;
             }
@@ -553,10 +546,7 @@ public class HostPeer extends Peer {
             while (hostPeer.isRunning()) {
                 try {
                     socket = serverSocket.accept();
-                    //socket.setReceiveBufferSize(1024 * 1024);
-                    //socket.setSendBufferSize(1024 * 1024);
-                }
-                catch (IOException e) {
+                } catch (IOException e) {
                     break;
                 }
                 int peerID = verifyHandshake(socket);
@@ -572,8 +562,7 @@ public class HostPeer extends Peer {
         public void closeSocket() {
             try {
                 serverSocket.close();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when closing serverSocket. Exception is not rethrown.");
             }
         }
@@ -584,11 +573,10 @@ public class HostPeer extends Peer {
 
     }
 
-    public class ConnectionStarter extends ConnectionHandler implements Runnable {
+    private class ConnectionStarter extends ConnectionHandler implements Runnable {
 
         private final HostPeer hostPeer;
-        private final ArrayList<Peer> knownPeerList;	//Known peers from config file. Host is responsible to initiate connection to these peers. Only used by ConnectionStarter.
-        private final List<Peer> connectingPeerList;
+        private final ConcurrentLinkedQueue<Peer> connectingPeerQueue;
 
         public ConnectionStarter(HostPeer hostPeer, ArrayList<Peer> knownPeerList) {
             if (hostPeer == null) {
@@ -599,8 +587,7 @@ public class HostPeer extends Peer {
             }
 
             this.hostPeer = hostPeer;
-            this.knownPeerList = knownPeerList;
-            connectingPeerList = Collections.synchronizedList(new ArrayList<>(knownPeerList));
+            connectingPeerQueue = new ConcurrentLinkedQueue<>(knownPeerList);
         }
 
         @Override
@@ -611,31 +598,25 @@ public class HostPeer extends Peer {
 
             while (hostPeer.isRunning()) {
                 if (threadSleepCount % 3000 == 0) {
-                    synchronized (connectingPeerList) {
-                        Iterator<Peer> iterator = connectingPeerList.iterator();
-                        while (iterator.hasNext()) {
-                            Peer peer = iterator.next();
-                            try {
-                                socket = new Socket(peer.getHostname(), peer.getPort());	//It would take about 1s to get IOException if unable to connect.
-                                //socket.setReceiveBufferSize(1024 * 1024);
-                                //socket.setSendBufferSize(1024 * 1024);
-                            }
-                            catch (IOException e) {
-                                continue;	//Unable to connect. Pass this peer.
-                            }
-                            sendHandshake(socket, hostPeer.getPeerID());
-                            int peerID = verifyHandshake(socket);
-                            P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
-                            hostPeer.registerNeighbor(peerID, socket);
-                            iterator.remove();
+                    Iterator<Peer> iterator = connectingPeerQueue.iterator();
+                    while (iterator.hasNext() && hostPeer.isRunning()) {        //Prevent exit of program from waiting until all peers are tried. It could take N seconds.
+                        Peer peer = iterator.next();
+                        try {
+                            socket = new Socket(peer.getHostname(), peer.getPort());    //It may take 1s to get IOException if unable to connect.
+                        } catch (IOException e) {
+                            continue;    //Unable to connect. Pass this peer.
                         }
+                        sendHandshake(socket, hostPeer.getPeerID());
+                        int peerID = verifyHandshake(socket);
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
+                        hostPeer.registerNeighbor(peerID, socket);
+                        iterator.remove();
                     }
                 }
 
                 try {
                     Thread.sleep(threadSleep);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     break;
                 }
                 threadSleepCount += threadSleep;
@@ -648,13 +629,7 @@ public class HostPeer extends Peer {
                 return;
             }
 
-            if (knownPeerList.stream().anyMatch(p -> p.getPeerID() == peer.getPeerID())) {
-                synchronized (connectingPeerList) {
-                    if (!connectingPeerList.contains(peer)) {
-                        connectingPeerList.add(peer);
-                    }
-                }
-            }
+            connectingPeerQueue.add(peer);
         }
 
     }
@@ -674,8 +649,7 @@ public class HostPeer extends Peer {
 
             try {
                 input = new DataInputStream(socket.getInputStream());
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when getting input stream. Exception is not rethrown.");
                 return -1;
             }
@@ -687,17 +661,14 @@ public class HostPeer extends Peer {
                     return -1;
                 }
                 peerID = input.readInt();
-            }
-            catch (UnsupportedEncodingException e) {
+            } catch (UnsupportedEncodingException e) {
                 P2PLogger.log("UnsupportedEncodingException happens when verifying handshake. Exception is not rethrown.");
                 return -1;
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when verifying handshake. Exception is not rethrown.");
                 try {
                     input.close();
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     P2PLogger.log("IOException happens when closing input stream. Exception is not rethrown.");
                 }
                 return -1;
@@ -713,22 +684,19 @@ public class HostPeer extends Peer {
 
             try {
                 output = new DataOutputStream(socket.getOutputStream());
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when getting output stream. Exception is not rethrown.");
                 return -1;
             }
-            try{
+            try {
                 output.writeBytes(HANDSHAKE);
                 output.writeInt(hostPeerID);
                 output.flush();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when sending handshake. Exception is not rethrown.");
                 try {
                     output.close();
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     P2PLogger.log("IOException happens when closing output stream. Exception is not rethrown.");
                 }
                 return -1;

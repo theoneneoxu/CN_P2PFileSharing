@@ -9,18 +9,18 @@ public class Peer {
     private final String hostname;
     private final int port;
     private final int pieceCount;
-    private final BitSet pieceStatus;		//bit representation of file piece completion status
+    private final BitSet pieceStatus;        //bit representation of file piece completion status
 
     public enum MessageType {
 
-        CHOKE((byte)0),
-        UNCHOKE((byte)1),
-        INTERESTED((byte)2),
-        NOT_INTERESTED((byte)3),
-        HAVE((byte)4),
-        BITFIELD((byte)5),
-        REQUEST((byte)6),
-        PIECE((byte)7);
+        CHOKE((byte) 0),
+        UNCHOKE((byte) 1),
+        INTERESTED((byte) 2),
+        NOT_INTERESTED((byte) 3),
+        HAVE((byte) 4),
+        BITFIELD((byte) 5),
+        REQUEST((byte) 6),
+        PIECE((byte) 7);
 
         private final byte b;
 
@@ -128,7 +128,7 @@ public class Peer {
             return -1;
         }
 
-        BitSet bitSet = BitSet.valueOf(switchBitEndian(bitfield));	//P2P protocol bitfield uses big-endian. Need to switch.
+        BitSet bitSet = BitSet.valueOf(switchBitEndian(bitfield));    //P2P protocol bitfield uses big-endian. Need to switch.
         if (bitSet.length() > pieceCount) {
             return -1;
         }
@@ -187,7 +187,7 @@ public class Peer {
         }
 
         synchronized (peer.getPieceStatus()) {
-            bitSet = (BitSet)peer.getPieceStatus().clone();
+            bitSet = (BitSet) peer.getPieceStatus().clone();
         }
         synchronized (pieceStatus) {
             bitSet.andNot(pieceStatus);
@@ -204,7 +204,7 @@ public class Peer {
         }
 
         synchronized (peer.getPieceStatus()) {
-            bitSet = (BitSet)peer.getPieceStatus().clone();
+            bitSet = (BitSet) peer.getPieceStatus().clone();
         }
         synchronized (pieceStatus) {
             bitSet.andNot(pieceStatus);
@@ -224,7 +224,7 @@ public class Peer {
     private byte[] switchBitEndian(byte[] bytes) {
         for (int i = 0; i < bytes.length; i++) {
             byte b = bytes[i];
-            bytes[i] = (byte)((b & 0b00000001) << 7 | (b & 0b00000010) << 5 | (b & 0b00000100) << 3 | (b & 0b00001000) << 1 | (b & 0b00010000) >> 1 | (b & 0b00100000) >> 3 | (b & 0b01000000) >> 5 | (b & 0b10000000) >> 7);
+            bytes[i] = (byte) ((b & 0b00000001) << 7 | (b & 0b00000010) << 5 | (b & 0b00000100) << 3 | (b & 0b00001000) << 1 | (b & 0b00010000) >> 1 | (b & 0b00100000) >> 3 | (b & 0b01000000) >> 5 | (b & 0b10000000) >> 7);
         }
         return bytes;
     }

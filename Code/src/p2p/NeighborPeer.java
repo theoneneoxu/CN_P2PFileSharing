@@ -1,13 +1,13 @@
 package p2p;
 
 import static p2p.Peer.MessageType.*;
+
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.sql.Timestamp;
-import java.util.ArrayList;
 
 @SuppressWarnings("unused")
 public class NeighborPeer extends Peer {
@@ -60,11 +60,11 @@ public class NeighborPeer extends Peer {
     }
 
     public void setPreferredByHost(boolean b) {
-            preferredByHost = b;
+        preferredByHost = b;
     }
 
     public boolean isPreferredByHost() {
-            return preferredByHost;
+        return preferredByHost;
     }
 
     public void setOptimisticByHost(boolean b) {
@@ -256,8 +256,7 @@ public class NeighborPeer extends Peer {
             try {
                 input = new DataInputStream(socket.getInputStream());
                 output = new DataOutputStream(socket.getOutputStream());
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when creating MessageHandler. Exception is not rethrown.");
                 closeSocket();
             }
@@ -288,111 +287,102 @@ public class NeighborPeer extends Peer {
                         messagePayload = new byte[Math.max(0, messageLength - messageType.length())];
                         input.readFully(messagePayload);
                     }
-                }
-                catch (IOException e) {
+                } catch (IOException e) {
+                    if (hostPeer.isRunning()) {
+                        P2PLogger.log("Connection is lost for Peer " + neighborPeer.getPeerID() + ".");
+                        hostPeer.deregisterNeighbor(neighborPeer);
+                    }
                     break;
                 }
 
-                switch(messageType) {
-                case CHOKE:
-                    neighborPeer.setUnchokedHost(false);
-                    P2PLogger.log("Peer " + hostPeer.getPeerID() + " is choked by Peer " + neighborPeer.getPeerID() + ".");
-                    break;
-                case UNCHOKE:
-                    neighborPeer.setUnchokedHost(true);
-                    P2PLogger.log("Peer " + hostPeer.getPeerID() + " is unchoked by Peer " + neighborPeer.getPeerID() + ".");
-                    if (hostPeer.isInterested(neighborPeer)) {
-                        sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
-                    } else {
-                        sendMessage(NOT_INTERESTED);
-                    }
-                    break;
-                case INTERESTED:
-                    neighborPeer.setInterestedInHost(true);
-                    P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'interested' message from Peer " + neighborPeer.getPeerID() + ".");
-                    break;
-                case NOT_INTERESTED:
-                    neighborPeer.setInterestedInHost(false);
-                    P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'not interested' message from Peer " + neighborPeer.getPeerID() + ".");
-                    break;
-                case HAVE:
-                    if (messagePayload.length == 4) {
-                        pieceIndex = ByteBuffer.wrap(messagePayload).getInt();
-                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'have' message from Peer " + neighborPeer.getPeerID() + " for the piece " + pieceIndex + ".");
-                    } else {
-                        pieceIndex = -1;
-                    }
-                    neighborPeer.markPieceComplete(pieceIndex);
-                    if (!neighborPeer.isPreviousInterestOfHost() && hostPeer.isInterested(neighborPeer)) {
-                        sendMessage(INTERESTED);
-                        if (neighborPeer.isUnchokedHost()) {
+                switch (messageType) {
+                    case CHOKE:
+                        neighborPeer.setUnchokedHost(false);
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " is choked by Peer " + neighborPeer.getPeerID() + ".");
+                        break;
+                    case UNCHOKE:
+                        neighborPeer.setUnchokedHost(true);
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " is unchoked by Peer " + neighborPeer.getPeerID() + ".");
+                        if (hostPeer.isInterested(neighborPeer)) {
                             sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
+                        } else {
+                            sendMessage(NOT_INTERESTED);
                         }
-                    }
-                    break;
-                case BITFIELD:
-                    neighborPeer.setPieceStatus(messagePayload);
-                    if (hostPeer.isInterested(neighborPeer)) {
-                        sendMessage(INTERESTED);
-                    } else {
-                        sendMessage(NOT_INTERESTED);
-                    }
-                    break;
-                case REQUEST:
-                    if (messagePayload.length == 4) {
-                        pieceIndex = ByteBuffer.wrap(messagePayload).getInt();
-                    } else {
-                        pieceIndex = -1;
-                    }
-                    if (neighborPeer.isUnchokedByHost()) {
-                        sendMessage(PIECE, pieceIndex);
-                    } else {
-                        sendMessage(CHOKE);
-                    }
-                    break;
-                case PIECE:
-                    if (pieceIndex != requestedPieceIndex) {
-                        continue;
-                    }
-                    if (!hostPeer.hasPiece(pieceIndex)) {
-                        if (hostPeer.getSharedFile().writePiece(pieceIndex, piece) == 0) {
-                            hostPeer.markPieceComplete(pieceIndex);
-                            neighborPeer.addSentToHostCount(piece.length);
-                            P2PLogger.log("Peer " + hostPeer.getPeerID() + " has downloaded the piece " + pieceIndex + " from Peer " + neighborPeer.getPeerID() + ". Now the number of pieces it has is " + hostPeer.getCompletePieceCount() + ".");
-                            if (hostPeer.hasCompleteFile()) {
-                                P2PLogger.log("Peer " + hostPeer.getPeerID() + " has downloaded the complete file.");
+                        break;
+                    case INTERESTED:
+                        neighborPeer.setInterestedInHost(true);
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'interested' message from Peer " + neighborPeer.getPeerID() + ".");
+                        break;
+                    case NOT_INTERESTED:
+                        neighborPeer.setInterestedInHost(false);
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'not interested' message from Peer " + neighborPeer.getPeerID() + ".");
+                        break;
+                    case HAVE:
+                        if (messagePayload.length == 4) {
+                            pieceIndex = ByteBuffer.wrap(messagePayload).getInt();
+                            P2PLogger.log("Peer " + hostPeer.getPeerID() + " received the 'have' message from Peer " + neighborPeer.getPeerID() + " for the piece " + pieceIndex + ".");
+                        } else {
+                            pieceIndex = -1;
+                        }
+                        neighborPeer.markPieceComplete(pieceIndex);
+                        if (!neighborPeer.isPreviousInterestOfHost() && hostPeer.isInterested(neighborPeer)) {
+                            sendMessage(INTERESTED);
+                            if (neighborPeer.isUnchokedHost()) {
+                                sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
                             }
-                            //Iterate over copy of active neighbor list to prevent from blocking the list for too long. Because sendMessage may take a long time.
-                            ArrayList<NeighborPeer> snapshotOfActiveNeighborList;
-                            synchronized (hostPeer.getActiveNeighborList()) {
-                                snapshotOfActiveNeighborList = new ArrayList<>(hostPeer.getActiveNeighborList());
-                            }
-                            for (NeighborPeer np : snapshotOfActiveNeighborList) {
-                                np.getMessageHandler().sendMessage(HAVE, pieceIndex);
-                                if (np.isPreviousInterestOfHost() && !hostPeer.isInterested(np)) {
-                                    np.getMessageHandler().sendMessage(NOT_INTERESTED);
+                        }
+                        break;
+                    case BITFIELD:
+                        neighborPeer.setPieceStatus(messagePayload);
+                        if (hostPeer.isInterested(neighborPeer)) {
+                            sendMessage(INTERESTED);
+                        } else {
+                            sendMessage(NOT_INTERESTED);
+                        }
+                        break;
+                    case REQUEST:
+                        if (messagePayload.length == 4) {
+                            pieceIndex = ByteBuffer.wrap(messagePayload).getInt();
+                        } else {
+                            pieceIndex = -1;
+                        }
+                        if (neighborPeer.isUnchokedByHost()) {
+                            sendMessage(PIECE, pieceIndex);
+                        } else {
+                            sendMessage(CHOKE);
+                        }
+                        break;
+                    case PIECE:
+                        if (pieceIndex != requestedPieceIndex) {
+                            continue;
+                        }
+                        if (!hostPeer.hasPiece(pieceIndex)) {
+                            if (hostPeer.getSharedFile().writePiece(pieceIndex, piece) == 0) {
+                                hostPeer.markPieceComplete(pieceIndex);
+                                neighborPeer.addSentToHostCount(piece.length);
+                                P2PLogger.log("Peer " + hostPeer.getPeerID() + " has downloaded the piece " + pieceIndex + " from Peer " + neighborPeer.getPeerID() + ". Now the number of pieces it has is " + hostPeer.getCompletePieceCount() + ".");
+                                if (hostPeer.hasCompleteFile()) {
+                                    P2PLogger.log("Peer " + hostPeer.getPeerID() + " has downloaded the complete file.");
+                                }
+                                for (NeighborPeer p : hostPeer.getActiveNeighborList()) {
+                                    p.getMessageHandler().sendMessage(HAVE, pieceIndex);
+                                    if (p.isPreviousInterestOfHost() && !hostPeer.isInterested(p)) {
+                                        p.getMessageHandler().sendMessage(NOT_INTERESTED);
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (hostPeer.isInterested(neighborPeer) && neighborPeer.isUnchokedHost()) {
-                        sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
-                    }
-                    break;
-                default:
-                    P2PLogger.log("Invalid messageType happens when processing message for peer " + neighborPeer.getPeerID() + ".");
-                    break;
+                        if (hostPeer.isInterested(neighborPeer) && neighborPeer.isUnchokedHost()) {
+                            sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
+                        }
+                        break;
+                    default:
+                        P2PLogger.log("Invalid messageType happens when processing message for peer " + neighborPeer.getPeerID() + ".");
+                        break;
                 }
             }
 
             closeSocket();
-
-            if (hostPeer.isRunning()) {
-                P2PLogger.log("Connection is lost for Peer " + neighborPeer.getPeerID() + ".");
-                hostPeer.getActiveNeighborList().remove(neighborPeer);
-                hostPeer.getInactiveNeighborList().add(neighborPeer);
-                hostPeer.getConnectionStarter().addConnectingPeer(neighborPeer);
-            }
             //P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + ".");
         }
 
@@ -402,44 +392,44 @@ public class NeighborPeer extends Peer {
             byte[] piece = null;
 
             switch (messageType) {
-            case CHOKE:
-            case UNCHOKE:
-                break;
-            case INTERESTED:
-                neighborPeer.setPreviousInterestOfHost(true);
-                break;
-            case NOT_INTERESTED:
-                neighborPeer.setPreviousInterestOfHost(false);
-                break;
-            case HAVE:
-                messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
-                messageLength += messagePayload.length;
-                break;
-            case REQUEST:
-                if (neighborPeer.hasReachedDownloadingLimit()) {
-                    hostPeer.getSpeedLimiter().delayRequestMessage(neighborPeer, pieceIndex);
+                case CHOKE:
+                case UNCHOKE:
+                    break;
+                case INTERESTED:
+                    neighborPeer.setPreviousInterestOfHost(true);
+                    break;
+                case NOT_INTERESTED:
+                    neighborPeer.setPreviousInterestOfHost(false);
+                    break;
+                case HAVE:
+                    messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
+                    messageLength += messagePayload.length;
+                    break;
+                case REQUEST:
+                    if (neighborPeer.hasReachedDownloadingLimit()) {
+                        hostPeer.getSpeedLimiter().delayRequestMessage(neighborPeer, pieceIndex);
+                        return;
+                    }
+                    requestedPieceIndex = pieceIndex;
+                    messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
+                    messageLength += messagePayload.length;
+                    break;
+                case BITFIELD:
+                    messagePayload = hostPeer.getPieceStatusAsBitfield();
+                    messageLength += messagePayload.length;
+                    break;
+                case PIECE:
+                    if (neighborPeer.hasReachedUploadingLimit()) {
+                        hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
+                        return;
+                    }
+                    piece = hostPeer.getSharedFile().readPiece(pieceIndex);
+                    messageLength += 4 + piece.length;
+                    neighborPeer.addReceivedFromHostCount(piece.length);
+                    break;
+                default:
+                    P2PLogger.log("Invalid messageType happens when sending message for peer " + neighborPeer.getPeerID() + ". No message is sent.");
                     return;
-                }
-                requestedPieceIndex = pieceIndex;
-                messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
-                messageLength += messagePayload.length;
-                break;
-            case BITFIELD:
-                messagePayload = hostPeer.getPieceStatusAsBitfield();
-                messageLength += messagePayload.length;
-                break;
-            case PIECE:
-                if (neighborPeer.hasReachedUploadingLimit()) {
-                    hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
-                    return;
-                }
-                piece = hostPeer.getSharedFile().readPiece(pieceIndex);
-                messageLength += 4 + piece.length;
-                neighborPeer.addReceivedFromHostCount(piece.length);
-                break;
-            default:
-                P2PLogger.log("Invalid messageType happens when sending message for peer " + neighborPeer.getPeerID() + ". No message is sent.");
-                return;
             }
             //P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " is sending " + messageType + " Message to Peer " + neighborPeer.getPeerID() + " for piece " + pieceIndex + ".");
 
@@ -455,8 +445,7 @@ public class NeighborPeer extends Peer {
                     }
                     output.flush();
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
             }
         }
 
@@ -464,13 +453,12 @@ public class NeighborPeer extends Peer {
             sendMessage(messageType, -1);
         }
 
-        public final void closeSocket(){
+        public final void closeSocket() {
             try {
                 synchronized (socketLock) {
                     socket.close();
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when closing socket for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
             }
         }
@@ -495,8 +483,7 @@ public class NeighborPeer extends Peer {
                 synchronized (outputLock) {
                     output = new DataOutputStream(socket.getOutputStream());
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 P2PLogger.log("IOException happens when replacing socket. Exception is not rethrown.");
                 closeSocket();
             }
