@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.sql.Timestamp;
+import java.util.concurrent.atomic.AtomicLong;
 
 @SuppressWarnings("unused")
 public class NeighborPeer extends Peer {
@@ -17,12 +17,12 @@ public class NeighborPeer extends Peer {
     private volatile boolean previousInterestOfHost;
     private volatile boolean interestedInHost;
     private volatile boolean unchokedHost;
-    private long sentToHostTotalCount;
-    private long sentToHostSubCount;
-    private long receivedFromHostTotalCount;
-    private long receivedFromHostSubCount;
-    private final Timestamp creationTimestamp;
-    private final Timestamp subCountTimestamp;
+    private final long creationTimeMillis;
+    private final AtomicLong subCountTimeMillis;
+    private final AtomicLong sentToHostTotalCount;
+    private final AtomicLong sentToHostSubCount;
+    private final AtomicLong receivedFromHostTotalCount;
+    private final AtomicLong receivedFromHostSubCount;
     private final HostPeer hostPeer;
     private final MessageHandler messageHandler;
 
@@ -35,12 +35,12 @@ public class NeighborPeer extends Peer {
         previousInterestOfHost = false;
         interestedInHost = false;
         unchokedHost = false;
-        sentToHostTotalCount = 0;
-        sentToHostSubCount = 0;
-        receivedFromHostTotalCount = 0;
-        receivedFromHostSubCount = 0;
-        creationTimestamp = new Timestamp(System.currentTimeMillis());
-        subCountTimestamp = new Timestamp(System.currentTimeMillis());
+        creationTimeMillis = System.currentTimeMillis();
+        subCountTimeMillis = new AtomicLong(System.currentTimeMillis());
+        sentToHostTotalCount = new AtomicLong();
+        sentToHostSubCount = new AtomicLong();
+        receivedFromHostTotalCount = new AtomicLong();
+        receivedFromHostSubCount = new AtomicLong();
         messageHandler = new MessageHandler(hostPeer, this, socket);
     }
 
@@ -105,10 +105,8 @@ public class NeighborPeer extends Peer {
             return -1;
         }
 
-        synchronized (creationTimestamp) {
-            sentToHostTotalCount += count;
-            sentToHostSubCount += count;
-        }
+        sentToHostTotalCount.getAndAdd(count);
+        sentToHostSubCount.getAndAdd(count);
         return 0;
     }
 
@@ -118,95 +116,51 @@ public class NeighborPeer extends Peer {
             return -1;
         }
 
-        synchronized (creationTimestamp) {
-            receivedFromHostTotalCount += count;
-            receivedFromHostSubCount += count;
-        }
+        receivedFromHostTotalCount.getAndAdd(count);
+        receivedFromHostSubCount.getAndAdd(count);
         return 0;
     }
 
     public long getSentToHostTotalCount() {
-        synchronized (creationTimestamp) {
-            return sentToHostTotalCount;
-        }
+        return sentToHostTotalCount.get();
     }
 
     public long getSentToHostSubCount() {
-        synchronized (creationTimestamp) {
-            return sentToHostSubCount;
-        }
+        return sentToHostSubCount.get();
     }
 
     public long getReceivedFromHostTotalCount() {
-        synchronized (creationTimestamp) {
-            return receivedFromHostTotalCount;
-        }
+        return receivedFromHostTotalCount.get();
     }
 
     public long getReceivedFromHostSubCount() {
-        synchronized (creationTimestamp) {
-            return receivedFromHostSubCount;
-        }
+        return receivedFromHostSubCount.get();
     }
 
     public long getSentToHostTotalRate() {
-        long rate;
-        synchronized (creationTimestamp) {
-            long timeInterval = System.currentTimeMillis() - creationTimestamp.getTime();
-            if (timeInterval > 0) {
-                rate = sentToHostTotalCount * 1000 / timeInterval;
-            } else {
-                rate = 0;
-            }
-        }
-        return rate;
+        long interval = System.currentTimeMillis() - creationTimeMillis;
+        return interval > 0 ? sentToHostTotalCount.get() * 1000 / interval : 0;
     }
 
     public long getSentToHostSubRate() {
-        long rate;
-        synchronized (creationTimestamp) {
-            long timeInterval = System.currentTimeMillis() - subCountTimestamp.getTime();
-            if (timeInterval > 0) {
-                rate = sentToHostSubCount * 1000 / timeInterval;
-            } else {
-                rate = 0;
-            }
-        }
-        return rate;
+        long interval = System.currentTimeMillis() - subCountTimeMillis.get();
+        return interval > 0 ? sentToHostSubCount.get() * 1000 / interval : 0;
     }
 
     public long getReceivedFromHostTotalRate() {
-        long rate;
-        synchronized (creationTimestamp) {
-            long timeInterval = System.currentTimeMillis() - creationTimestamp.getTime();
-            if (timeInterval > 0) {
-                rate = receivedFromHostTotalCount * 1000 / timeInterval;
-            } else {
-                rate = 0;
-            }
-        }
-        return rate;
+        long interval = System.currentTimeMillis() - creationTimeMillis;
+        return interval > 0 ? receivedFromHostTotalCount.get() * 1000 / interval : 0;
     }
 
     public long getReceivedFromHostSubRate() {
-        long rate;
-        synchronized (creationTimestamp) {
-            long timeInterval = System.currentTimeMillis() - subCountTimestamp.getTime();
-            if (timeInterval > 0) {
-                rate = receivedFromHostSubCount * 1000 / timeInterval;
-            } else {
-                rate = 0;
-            }
-        }
-        return rate;
+        long interval = System.currentTimeMillis() - subCountTimeMillis.get();
+        return interval > 0 ? receivedFromHostSubCount.get() * 1000 / interval : 0;
     }
 
     public void resetSubCount() {
-        synchronized (creationTimestamp) {
-            sentToHostSubCount = 0;
-            receivedFromHostSubCount = 0;
-            subCountTimestamp.setTime(System.currentTimeMillis());
-        }
+        sentToHostSubCount.set(0);
+        receivedFromHostSubCount.set(0);
+        subCountTimeMillis.set(System.currentTimeMillis());
     }
 
     public boolean hasReachedDownloadingLimit() {

@@ -18,7 +18,7 @@ public class peerProcess {
     private String fileName = null;
     private long fileSize = -1;
     private int pieceSize = 65536;                    //Best speed if using size around this value.
-    private int preferredNeighborCount = 5;
+    private int preferredNeighborCount = 3;
     private int preferredUnchokingInterval = 10;
     private int optimisticNeighborCount = 1;
     private int optimisticUnchokingInterval = 20;
@@ -29,8 +29,8 @@ public class peerProcess {
 
     private int hostPeerID;
     private String fileDirectory;
-    private HostPeer hostPeer;
     private P2PLogger p2pLogger;
+    private HostPeer hostPeer;
     private PeerMonitor peerMonitor;
 
     public static void main(String[] args) {

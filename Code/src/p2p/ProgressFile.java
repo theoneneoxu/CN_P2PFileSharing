@@ -9,7 +9,7 @@ public class ProgressFile {
 
     private final String fileName;
     private final String fileDirectory;
-    private final int fileSize;
+    private final int fileSize;                 //Progress file size cannot be large.
     private final RandomAccessFile fileIO;
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
