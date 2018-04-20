@@ -31,8 +31,8 @@ public class HostPeer extends Peer {
     private final ConnectionListener connectionListener;
     private final ConnectionStarter connectionStarter;
     private final ArrayList<Peer> knownPeerList;
-    private final List<NeighborPeer> activeNeighborList;
-    private final List<NeighborPeer> inactiveNeighborList;
+    private final CopyOnWriteArrayList<NeighborPeer> activeNeighborList;
+    private final CopyOnWriteArrayList<NeighborPeer> inactiveNeighborList;
     private final ExecutorService neighborThreadPool;
 
     public HostPeer(Peer peer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval,
@@ -127,11 +127,11 @@ public class HostPeer extends Peer {
         return pauseIndicator;
     }
 
-    public List<NeighborPeer> getActiveNeighborList() {
+    public CopyOnWriteArrayList<NeighborPeer> getActiveNeighborList() {
         return activeNeighborList;
     }
 
-    public List<NeighborPeer> getInactiveNeighborList() {
+    public CopyOnWriteArrayList<NeighborPeer> getInactiveNeighborList() {
         return inactiveNeighborList;
     }
 
