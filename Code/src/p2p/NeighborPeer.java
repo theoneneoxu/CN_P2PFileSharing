@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 @SuppressWarnings("unused")
@@ -17,8 +18,8 @@ public class NeighborPeer extends Peer {
     private volatile boolean previousInterestOfHost;
     private volatile boolean interestedInHost;
     private volatile boolean unchokedHost;
-    private final long creationTimeMillis;
-    private final AtomicLong subCountTimeMillis;
+    private final long creationTimestamp;
+    private final AtomicLong subCountTimestamp;
     private final AtomicLong sentToHostTotalCount;
     private final AtomicLong sentToHostSubCount;
     private final AtomicLong receivedFromHostTotalCount;
@@ -35,8 +36,8 @@ public class NeighborPeer extends Peer {
         previousInterestOfHost = false;
         interestedInHost = false;
         unchokedHost = false;
-        creationTimeMillis = System.currentTimeMillis();
-        subCountTimeMillis = new AtomicLong(System.currentTimeMillis());
+        creationTimestamp = System.currentTimeMillis();
+        subCountTimestamp = new AtomicLong(System.currentTimeMillis());
         sentToHostTotalCount = new AtomicLong();
         sentToHostSubCount = new AtomicLong();
         receivedFromHostTotalCount = new AtomicLong();
@@ -52,7 +53,7 @@ public class NeighborPeer extends Peer {
         interestedInHost = false;
         unchokedHost = false;
         resetSubCount();
-        messageHandler.replaceSocket(socket);
+        messageHandler.resetMessageHandler(socket);
     }
 
     public boolean isUnchokedByHost() {
@@ -138,29 +139,29 @@ public class NeighborPeer extends Peer {
     }
 
     public long getSentToHostTotalRate() {
-        long interval = System.currentTimeMillis() - creationTimeMillis;
+        long interval = System.currentTimeMillis() - creationTimestamp;
         return interval > 0 ? sentToHostTotalCount.get() * 1000 / interval : 0;
     }
 
     public long getSentToHostSubRate() {
-        long interval = System.currentTimeMillis() - subCountTimeMillis.get();
+        long interval = System.currentTimeMillis() - subCountTimestamp.get();
         return interval > 0 ? sentToHostSubCount.get() * 1000 / interval : 0;
     }
 
     public long getReceivedFromHostTotalRate() {
-        long interval = System.currentTimeMillis() - creationTimeMillis;
+        long interval = System.currentTimeMillis() - creationTimestamp;
         return interval > 0 ? receivedFromHostTotalCount.get() * 1000 / interval : 0;
     }
 
     public long getReceivedFromHostSubRate() {
-        long interval = System.currentTimeMillis() - subCountTimeMillis.get();
+        long interval = System.currentTimeMillis() - subCountTimestamp.get();
         return interval > 0 ? receivedFromHostSubCount.get() * 1000 / interval : 0;
     }
 
     public void resetSubCount() {
         sentToHostSubCount.set(0);
         receivedFromHostSubCount.set(0);
-        subCountTimeMillis.set(System.currentTimeMillis());
+        subCountTimestamp.set(System.currentTimeMillis());
     }
 
     public boolean hasReachedDownloadingLimit() {
@@ -169,6 +170,10 @@ public class NeighborPeer extends Peer {
 
     public boolean hasReachedUploadingLimit() {
         return hostPeer.getSpeedLimiter().hasReachedUploadingLimit(this);
+    }
+
+    public boolean hasPendingPieceMessage(int pieceIndex) {
+        return hostPeer.getSpeedLimiter().hasPendingPieceMessage(this, pieceIndex);
     }
 
     public MessageHandler getMessageHandler() {
@@ -184,7 +189,8 @@ public class NeighborPeer extends Peer {
     @SuppressWarnings("CatchMayIgnoreException")
     public class MessageHandler implements Runnable {
 
-        private volatile int requestedPieceIndex;
+        private volatile long estimatedRTT;      //in milliseconds
+        private volatile long deviationRTT;      //in milliseconds
         private final HostPeer hostPeer;
         private final NeighborPeer neighborPeer;
         private Socket socket;
@@ -192,6 +198,7 @@ public class NeighborPeer extends Peer {
         private DataOutputStream output;
         private final Object socketLock;
         private final Object outputLock;
+        private final ConcurrentLinkedQueue<RequestedPiece> requestedPieceQueue;
 
         public MessageHandler(HostPeer hostPeer, NeighborPeer neighborPeer, Socket socket) {
             if (hostPeer == null) {
@@ -204,6 +211,8 @@ public class NeighborPeer extends Peer {
                 throw new IllegalArgumentException("Invalid socket happens when creating MessageHandler.");
             }
 
+            estimatedRTT = 0;
+            deviationRTT = 0;
             this.hostPeer = hostPeer;
             this.neighborPeer = neighborPeer;
             this.socket = socket;
@@ -214,9 +223,9 @@ public class NeighborPeer extends Peer {
                 P2PLogger.log("IOException happens when creating MessageHandler. Exception is not rethrown.");
                 closeSocket();
             }
-            requestedPieceIndex = -1;
             socketLock = new Object();
             outputLock = new Object();
+            requestedPieceQueue = new ConcurrentLinkedQueue<>();
         }
 
         //Message listener.
@@ -307,9 +316,10 @@ public class NeighborPeer extends Peer {
                         }
                         break;
                     case PIECE:
-                        if (pieceIndex != requestedPieceIndex) {
-                            continue;
+                        if (!isPieceRequested(pieceIndex)) {
+                            continue;       //Ignore the piece that was not requested before.
                         }
+                        int requestSendingTimes = checkPieceReceived(pieceIndex);
                         if (!hostPeer.hasPiece(pieceIndex)) {
                             if (hostPeer.getSharedFile().writePiece(pieceIndex, piece) == 0) {
                                 hostPeer.markPieceComplete(pieceIndex);
@@ -327,7 +337,12 @@ public class NeighborPeer extends Peer {
                             }
                         }
                         if (hostPeer.isInterested(neighborPeer) && neighborPeer.isUnchokedHost()) {
-                            sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
+                            for (int i = 0; i < requestSendingTimes; i++) {
+                                sendMessage(REQUEST, hostPeer.findNextInterestingPiece(neighborPeer));
+                            }
+                        }
+                        if (DEBUG) {
+                            P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " has Peer " + neighborPeer.getPeerID() + ": Requested Queue Size = " + requestedPieceQueue.size() + ".");
                         }
                         break;
                     default:
@@ -337,7 +352,9 @@ public class NeighborPeer extends Peer {
             }
 
             closeSocket();
-            //P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + ".");
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + ".");
+            }
         }
 
         public void sendMessage(MessageType messageType, int pieceIndex) {
@@ -364,7 +381,10 @@ public class NeighborPeer extends Peer {
                         hostPeer.getSpeedLimiter().delayRequestMessage(neighborPeer, pieceIndex);
                         return;
                     }
-                    requestedPieceIndex = pieceIndex;
+                    if (isPieceRequested(pieceIndex)) {
+                        return;
+                    }
+                    requestedPieceQueue.add(new RequestedPiece(pieceIndex, System.currentTimeMillis()));
                     messagePayload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
                     messageLength += messagePayload.length;
                     break;
@@ -373,7 +393,7 @@ public class NeighborPeer extends Peer {
                     messageLength += messagePayload.length;
                     break;
                 case PIECE:
-                    if (neighborPeer.hasReachedUploadingLimit()) {
+                    if (neighborPeer.hasReachedUploadingLimit() || neighborPeer.hasPendingPieceMessage(pieceIndex)) {
                         hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
                         return;
                     }
@@ -385,7 +405,9 @@ public class NeighborPeer extends Peer {
                     P2PLogger.log("Invalid messageType happens when sending message for peer " + neighborPeer.getPeerID() + ". No message is sent.");
                     return;
             }
-            //P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " is sending " + messageType + " Message to Peer " + neighborPeer.getPeerID() + " for piece " + pieceIndex + ".");
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " is sending " + messageType + " Message to Peer " + neighborPeer.getPeerID() + " for piece " + pieceIndex + ".");
+            }
 
             try {
                 synchronized (outputLock) {
@@ -423,12 +445,27 @@ public class NeighborPeer extends Peer {
             }
         }
 
+        public long getEstimatedRTT() {
+            return estimatedRTT;
+        }
+
+        public long getDeviationRTT() {
+            return deviationRTT;
+        }
+
+        public int getRequestedPieceQueueSize() {
+            return requestedPieceQueue.size();
+        }
+
         //Only call this method when neighbor is reconnected.
-        private void replaceSocket(Socket socket) {
+        private void resetMessageHandler(Socket socket) {
             if (socket == null) {
                 return;
             }
 
+            estimatedRTT = 0;
+            deviationRTT = 0;
+            requestedPieceQueue.clear();
             synchronized (socketLock) {
                 this.socket = socket;
             }
@@ -441,6 +478,62 @@ public class NeighborPeer extends Peer {
                 P2PLogger.log("IOException happens when replacing socket. Exception is not rethrown.");
                 closeSocket();
             }
+        }
+
+        private boolean isPieceRequested(int pieceIndex) {
+            return requestedPieceQueue.stream().anyMatch(p -> p.getPieceIndex() == pieceIndex);
+        }
+
+        //Return the number of times that Request Message should be sent. The number is calculated based on network delay.
+        @SuppressWarnings("NonAtomicOperationOnVolatileField")
+        private int checkPieceReceived(int pieceIndex) {
+            int requestSendingTimes;
+
+            RequestedPiece requestedPiece = requestedPieceQueue.stream().filter(p -> p.getPieceIndex() == pieceIndex).findFirst().orElse(null);
+            requestedPieceQueue.remove(requestedPiece);
+            if (requestedPiece == null) {
+                return -1;
+
+            }
+
+            long sampleRTT = System.currentTimeMillis() - requestedPiece.getSentTimestamp();
+            if (sampleRTT > estimatedRTT + deviationRTT) {
+                if (requestedPieceQueue.isEmpty()) {
+                    requestSendingTimes = 1;
+                } else {
+                    requestSendingTimes = 0;
+                }
+            } else {
+                requestSendingTimes = 2;
+            }
+
+            estimatedRTT = (7 * estimatedRTT + sampleRTT) / 8;
+            deviationRTT = (3 * deviationRTT + Math.abs(sampleRTT - estimatedRTT)) / 4;     //Use new estimatedRTT to calculate deviationRTT
+
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " received piece " + pieceIndex + " from Peer " + neighborPeer.getPeerID() + ": Sample RTT = " + sampleRTT + "ms; New Estimated RTT = " + estimatedRTT + "ms; New Deviation RTT = " + deviationRTT + "ms; Request Sending Times = " + requestSendingTimes + ".");
+            }
+            return requestSendingTimes;
+        }
+
+        private class RequestedPiece {
+
+            private final int pieceIndex;
+            private final long sentTimestamp;
+
+            public RequestedPiece(int pieceIndex, long sentTimestamp) {
+                this.pieceIndex = pieceIndex;
+                this.sentTimestamp = sentTimestamp;
+            }
+
+            public int getPieceIndex() {
+                return pieceIndex;
+            }
+
+            public long getSentTimestamp() {
+                return sentTimestamp;
+            }
+
         }
 
     }

@@ -505,7 +505,9 @@ public class peerProcess {
             Offline     1008       25%         -           -                                                             1234567890  1234567890
             Offline     1009       55%         -           -                                                             1234567890  1234567890
 
-            PeerID: 1006    Hostname: localhost    IP: 127.0.0.1     Port: 5995    Complete Piece Count: 8325
+            Peer ID: 1006    Hostname: localhost    IP: 127.0.0.1     Port: 5995    Complete Pieces: 8325
+            Connecting Peers: 3    Delaying Request Messages: 5    Delaying Piece Messages: 26
+            Request Estimated RTT: 125 ms    Request Deviation RTT: 25 ms    Flying Request Messages: 15
             Available commands: (e)xit; (p)ause; (r)esume; (d)ownload limit_in_KB, (u)pload limit_in_KB. Enter (h)elp to disable this message.
             Enter help for available commands; enter Peer ID for more details:
             */
@@ -589,14 +591,14 @@ public class peerProcess {
             HostInfo hostInfo = new HostInfo();
             hostInfo.peerID = hostPeer.getPeerID();
             hostInfo.progressPercentage = hostPeer.getCompletePieceCount() * 100 / hostPeer.getPieceCount();
-            hostInfo.downloadSpeed = activeNeighborInfoList.stream().mapToLong(n -> n.downloadSpeed).sum();
-            hostInfo.uploadSpeed = activeNeighborInfoList.stream().mapToLong(n -> n.uploadSpeed).sum();
-            hostInfo.selectedByHostCount = (int) activeNeighborInfoList.stream().filter(n -> !n.selectedByHost.equals("   ")).count();
-            hostInfo.unchokedHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.unchokedHost.equals("Yes")).count();
-            hostInfo.interestOfHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.interestOfHost.equals("Yes")).count();
-            hostInfo.interestedInHostCount = (int) activeNeighborInfoList.stream().filter(n -> n.interestedInHost.equals("Yes")).count();
-            hostInfo.totalDownload = activeNeighborInfoList.stream().mapToLong(n -> n.totalDownload).sum() + inactiveNeighborInfoList.stream().mapToLong(n -> n.totalDownload).sum();
-            hostInfo.totalUpload = activeNeighborInfoList.stream().mapToLong(n -> n.totalUpload).sum() + inactiveNeighborInfoList.stream().mapToLong(n -> n.totalUpload).sum();
+            hostInfo.downloadSpeed = activeNeighborInfoList.stream().mapToLong(i -> i.downloadSpeed).sum();
+            hostInfo.uploadSpeed = activeNeighborInfoList.stream().mapToLong(i -> i.uploadSpeed).sum();
+            hostInfo.selectedByHostCount = (int) activeNeighborInfoList.stream().filter(i -> !i.selectedByHost.equals("   ")).count();
+            hostInfo.unchokedHostCount = (int) activeNeighborInfoList.stream().filter(i -> i.unchokedHost.equals("Yes")).count();
+            hostInfo.interestOfHostCount = (int) activeNeighborInfoList.stream().filter(i -> i.interestOfHost.equals("Yes")).count();
+            hostInfo.interestedInHostCount = (int) activeNeighborInfoList.stream().filter(i -> i.interestedInHost.equals("Yes")).count();
+            hostInfo.totalDownload = activeNeighborInfoList.stream().mapToLong(i -> i.totalDownload).sum() + inactiveNeighborInfoList.stream().mapToLong(i -> i.totalDownload).sum();
+            hostInfo.totalUpload = activeNeighborInfoList.stream().mapToLong(i -> i.totalUpload).sum() + inactiveNeighborInfoList.stream().mapToLong(i -> i.totalUpload).sum();
 
             String string = "";
             string += "                                   Download    Upload      Selected    Unchoked    Interest    Interested    Total       Total\n";
@@ -644,13 +646,28 @@ public class peerProcess {
         }
 
         private String getPeerDetails() {
+            if (showDetailPeer == null) {
+                return "";
+            }
+
             String string = "";
-            if (showDetailPeer != null) {
-                string += "PeerID: " + showDetailPeer.getPeerID() + "    ";
-                string += "Hostname: " + showDetailPeer.getHostname() + "    ";
-                string += "IP: " + showDetailPeer.getIPAddress() + "    ";
-                string += "Port: " + showDetailPeer.getPort() + "    ";
-                string += "Complete Piece Count: " + showDetailPeer.getCompletePieceCount();
+            string += "Peer ID: " + showDetailPeer.getPeerID() + "    ";
+            string += "Hostname: " + showDetailPeer.getHostname() + "    ";
+            string += "IP: " + showDetailPeer.getIPAddress() + "    ";
+            string += "Port: " + showDetailPeer.getPort() + "    ";
+            string += "Complete Pieces: " + showDetailPeer.getCompletePieceCount();
+            string += "\n";
+            if (showDetailPeer instanceof HostPeer) {
+                HostPeer hostPeer = (HostPeer) showDetailPeer;
+                string += "Connecting Peers: " + hostPeer.getConnectionStarter().getConnectingPeerQueueSize() + "    ";
+                string += "Delaying Request Messages: " + hostPeer.getSpeedLimiter().getDelayedRequestMessageMapSize() + "    ";
+                string += "Delaying Piece Messages: " + hostPeer.getSpeedLimiter().getDelayedPieceMessageQueueSize();
+                string += "\n";
+            } else if (showDetailPeer instanceof NeighborPeer) {
+                NeighborPeer neighborPeer = (NeighborPeer) showDetailPeer;
+                string += "Request Estimated RTT: " + neighborPeer.getMessageHandler().getEstimatedRTT() + " ms    ";
+                string += "Request Deviation RTT: " + neighborPeer.getMessageHandler().getDeviationRTT() + " ms    ";
+                string += "Flying Request Messages: " + neighborPeer.getMessageHandler().getRequestedPieceQueueSize();
                 string += "\n";
             }
             return string;

@@ -143,6 +143,10 @@ public class HostPeer extends Peer {
         return speedLimiter;
     }
 
+    public ConnectionStarter getConnectionStarter() {
+        return connectionStarter;
+    }
+
     @Override
     public String getIPAddress() {
         return connectionListener.getIPAddress();
@@ -196,8 +200,6 @@ public class HostPeer extends Peer {
     }
 
     private void registerNeighbor(int peerID, Socket socket) {
-        NeighborPeer neighborPeer;
-
         if (socket == null) {
             return;
         }
@@ -210,7 +212,7 @@ public class HostPeer extends Peer {
             return;
         }
 
-        neighborPeer = inactiveNeighborList.stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
+        NeighborPeer neighborPeer = inactiveNeighborList.stream().filter(p -> p.getPeerID() == peerID).findFirst().orElse(null);
         inactiveNeighborList.remove(neighborPeer);
         if (neighborPeer == null) {
             neighborPeer = new NeighborPeer(peerID, this, socket);
@@ -299,7 +301,10 @@ public class HostPeer extends Peer {
                 }
                 threadSleepCount += threadSleep;
             }
-            //P2PLogger.log("[DEBUG] Thread exists for PeerManager.");
+
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Thread exists for PeerManager.");
+            }
         }
 
         @SuppressWarnings("StringConcatenationInLoop")
@@ -408,7 +413,7 @@ public class HostPeer extends Peer {
         private volatile int uploadingSpeedLimit;
         private final HostPeer hostPeer;
         private final ConcurrentHashMap<NeighborPeer, Integer> delayedRequestMessageMap;
-        private final ConcurrentHashMap<NeighborPeer, Integer> delayedPieceMessageMap;
+        private final ConcurrentLinkedQueue<PieceMessage> delayedPieceMessageQueue;
 
         public SpeedLimiter(HostPeer hostPeer, int downloadingSpeedLimit, int uploadingSpeedLimit) {
             if (hostPeer == null) {
@@ -419,43 +424,44 @@ public class HostPeer extends Peer {
             this.downloadingSpeedLimit = downloadingSpeedLimit;
             this.uploadingSpeedLimit = uploadingSpeedLimit;
             delayedRequestMessageMap = new ConcurrentHashMap<>();
-            delayedPieceMessageMap = new ConcurrentHashMap<>();
+            delayedPieceMessageQueue = new ConcurrentLinkedQueue<>();
         }
 
         @Override
         public void run() {
-            Iterator<Map.Entry<NeighborPeer, Integer>> iterator;
-
             while (hostPeer.isRunning()) {
-                iterator = delayedRequestMessageMap.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry<NeighborPeer, Integer> entry = iterator.next();
+                Iterator<Map.Entry<NeighborPeer, Integer>> MapIterator = delayedRequestMessageMap.entrySet().iterator();
+                while (MapIterator.hasNext()) {
+                    Map.Entry<NeighborPeer, Integer> entry = MapIterator.next();
                     NeighborPeer neighborPeer = entry.getKey();
                     int pieceIndex = entry.getValue();
                     if (!neighborPeer.hasReachedDownloadingLimit()) {
                         neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex);
-                        iterator.remove();
+                        MapIterator.remove();
                     }
                 }
 
-                iterator = delayedPieceMessageMap.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry<NeighborPeer, Integer> entry = iterator.next();
-                    NeighborPeer neighborPeer = entry.getKey();
-                    int pieceIndex = entry.getValue();
+                Iterator<PieceMessage> queueIterator = delayedPieceMessageQueue.iterator();
+                while (queueIterator.hasNext()) {
+                    PieceMessage pieceMessage = queueIterator.next();
+                    NeighborPeer neighborPeer = pieceMessage.getNeighborPeer();
+                    int pieceIndex = pieceMessage.getPieceIndex();
                     if (!neighborPeer.hasReachedUploadingLimit()) {
                         neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex);
-                        iterator.remove();
+                        queueIterator.remove();
                     }
                 }
 
                 try {
-                    Thread.sleep(100);
+                    Thread.sleep(200);
                 } catch (InterruptedException e) {
                     break;
                 }
             }
-            //P2PLogger.log("[DEBUG] Thread exists for SpeedLimiter.");
+
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Thread exists for SpeedLimiter.");
+            }
         }
 
         public int getDownloadingSpeedLimit() {
@@ -474,25 +480,17 @@ public class HostPeer extends Peer {
             uploadingSpeedLimit = limit;
         }
 
-        public void delayRequestMessage(NeighborPeer neighborPeer, int pieceIndex) {
-            if (neighborPeer == null) {
-                throw new IllegalArgumentException("Invalid neighborPeer happens when adding SendingRequestNeighbor.");
-            }
-
-            delayedRequestMessageMap.put(neighborPeer, pieceIndex);
+        public int getDelayedRequestMessageMapSize() {
+            return delayedRequestMessageMap.size();
         }
 
-        public void delayPieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
-            if (neighborPeer == null) {
-                throw new IllegalArgumentException("Invalid neighborPeer happens when adding SendingRequestNeighbor.");
-            }
-
-            delayedPieceMessageMap.put(neighborPeer, pieceIndex);
+        public int getDelayedPieceMessageQueueSize() {
+            return delayedPieceMessageQueue.size();
         }
 
         public boolean hasReachedDownloadingLimit(NeighborPeer neighborPeer) {
             if (neighborPeer == null) {
-                return true;
+                throw new IllegalArgumentException("Invalid neighborPeer happens when checking Downloading Limit.");
             }
 
             if (downloadingSpeedLimit == 0) {
@@ -506,7 +504,7 @@ public class HostPeer extends Peer {
 
         public boolean hasReachedUploadingLimit(NeighborPeer neighborPeer) {
             if (neighborPeer == null) {
-                return true;
+                throw new IllegalArgumentException("Invalid neighborPeer happens when checking Uploading Limit.");
             }
 
             if (uploadingSpeedLimit == 0) {
@@ -516,6 +514,53 @@ public class HostPeer extends Peer {
             } else {
                 return neighborPeer.getReceivedFromHostSubRate() > uploadingSpeedLimit;
             }
+        }
+
+        public boolean hasPendingPieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
+            if (delayedPieceMessageQueue.stream().anyMatch(m -> m.getNeighborPeer() == neighborPeer && m.getPieceIndex() == pieceIndex)) {
+                return false;
+            }
+            return delayedPieceMessageQueue.stream().anyMatch(m -> m.getNeighborPeer() == neighborPeer);
+        }
+
+        public void delayRequestMessage(NeighborPeer neighborPeer, int pieceIndex) {
+            if (neighborPeer == null) {
+                throw new IllegalArgumentException("Invalid neighborPeer happens when delaying Request Message.");
+            }
+
+            delayedRequestMessageMap.put(neighborPeer, pieceIndex);
+        }
+
+        public void delayPieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
+            if (neighborPeer == null) {
+                throw new IllegalArgumentException("Invalid neighborPeer happens when delaying Piece Message.");
+            }
+
+            delayedPieceMessageQueue.add(new PieceMessage(neighborPeer, pieceIndex));
+        }
+
+        private class PieceMessage {
+
+            private final NeighborPeer neighborPeer;
+            private final int pieceIndex;
+
+            public PieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
+                if (neighborPeer == null) {
+                    throw new IllegalArgumentException("Invalid neighborPeer happens when creating PieceMessage.");
+                }
+
+                this.neighborPeer = neighborPeer;
+                this.pieceIndex = pieceIndex;
+            }
+
+            public NeighborPeer getNeighborPeer() {
+                return neighborPeer;
+            }
+
+            public int getPieceIndex() {
+                return pieceIndex;
+            }
+
         }
 
     }
@@ -556,7 +601,9 @@ public class HostPeer extends Peer {
             }
 
             closeSocket();
-            //P2PLogger.log("[DEBUG] Thread exists for ConnectionListener.");
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Thread exists for ConnectionListener.");
+            }
         }
 
         public void closeSocket() {
@@ -573,7 +620,7 @@ public class HostPeer extends Peer {
 
     }
 
-    private class ConnectionStarter extends ConnectionHandler implements Runnable {
+    public class ConnectionStarter extends ConnectionHandler implements Runnable {
 
         private final HostPeer hostPeer;
         private final ConcurrentLinkedQueue<Peer> connectingPeerQueue;
@@ -621,7 +668,10 @@ public class HostPeer extends Peer {
                 }
                 threadSleepCount += threadSleep;
             }
-            //P2PLogger.log("[DEBUG] Thread exists for ConnectionStarter.");
+
+            if (DEBUG) {
+                P2PLogger.log("[DEBUG] Thread exists for ConnectionStarter.");
+            }
         }
 
         public void addConnectingPeer(Peer peer) {
@@ -630,6 +680,10 @@ public class HostPeer extends Peer {
             }
 
             connectingPeerQueue.add(peer);
+        }
+
+        public int getConnectingPeerQueueSize() {
+            return connectingPeerQueue.size();
         }
 
     }
