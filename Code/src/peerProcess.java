@@ -142,32 +142,33 @@ public class peerProcess {
         try {
             while ((line = commonConfigReader.readLine()) != null) {
                 String[] strings = line.split(" ");
-                if (strings.length >= 2) {
-                    switch (strings[0]) {
-                        case "NumberOfPreferredNeighbors":
-                            preferredNeighborCount = Integer.parseInt(strings[1]);
-                            break;
-                        case "UnchokingInterval":
-                            preferredUnchokingInterval = Integer.parseInt(strings[1]);
-                            break;
-                        case "NumberOfOptimisticNeighbors":
-                            optimisticNeighborCount = Integer.parseInt(strings[1]);
-                            break;
-                        case "OptimisticUnchokingInterval":
-                            optimisticUnchokingInterval = Integer.parseInt(strings[1]);
-                            break;
-                        case "FileName":
-                            fileName = strings[1];
-                            break;
-                        case "FileSize":
-                            fileSize = Long.parseLong(strings[1]);
-                            break;
-                        case "PieceSize":
-                            pieceSize = Integer.parseInt(strings[1]);
-                            break;
-                        default:
-                            break;
-                    }
+                if (strings.length != 2) {
+                    continue;
+                }
+                switch (strings[0]) {
+                    case "NumberOfPreferredNeighbors":
+                        preferredNeighborCount = Integer.parseInt(strings[1]);
+                        break;
+                    case "UnchokingInterval":
+                        preferredUnchokingInterval = Integer.parseInt(strings[1]);
+                        break;
+                    case "NumberOfOptimisticNeighbors":
+                        optimisticNeighborCount = Integer.parseInt(strings[1]);
+                        break;
+                    case "OptimisticUnchokingInterval":
+                        optimisticUnchokingInterval = Integer.parseInt(strings[1]);
+                        break;
+                    case "FileName":
+                        fileName = strings[1];
+                        break;
+                    case "FileSize":
+                        fileSize = Long.parseLong(strings[1]);
+                        break;
+                    case "PieceSize":
+                        pieceSize = Integer.parseInt(strings[1]);
+                        break;
+                    default:
+                        break;
                 }
             }
         } catch (IOException e) {
@@ -232,7 +233,6 @@ public class peerProcess {
             System.out.println(string);
             return -1;
         }
-
         return 0;
     }
 
@@ -249,18 +249,19 @@ public class peerProcess {
             return -1;
         }
         try {
-            for (int index = 0; (line = peerInformationConfigReader.readLine()) != null; index++) {
+            while ((line = peerInformationConfigReader.readLine()) != null) {
                 String[] strings = line.split(" ");
-                if (strings.length >= 4) {
-                    Peer peer = new Peer(Integer.parseInt(strings[0]),
-                            strings[1],
-                            Integer.parseInt(strings[2]),
-                            (int) ((fileSize + pieceSize - 1) / pieceSize),
-                            strings[3].equals("1"));
-                    peerList.add(peer);
-                    if (peer.getPeerID() == hostPeerID) {
-                        hostPeerIndex = index;
-                    }
+                if (strings.length != 4) {
+                    continue;
+                }
+                Peer peer = new Peer(Integer.parseInt(strings[0]),
+                        strings[1],
+                        Integer.parseInt(strings[2]),
+                        (int) ((fileSize + pieceSize - 1) / pieceSize),
+                        strings[3].equals("1"));
+                peerList.add(peer);
+                if (peer.getPeerID() == hostPeerID) {
+                    hostPeerIndex = peerList.indexOf(peer);
                 }
             }
         } catch (IOException e) {
@@ -294,7 +295,6 @@ public class peerProcess {
             System.out.println(string);
             return -1;
         }
-
         return 0;
     }
 
@@ -506,8 +506,8 @@ public class peerProcess {
             Offline     1009       55%         -           -                                                             1234567890  1234567890
 
             Peer ID: 1006    Hostname: localhost    IP: 127.0.0.1     Port: 5995    Complete Pieces: 8325
-            Connecting Peers: 3    Delaying Request Messages: 5    Delaying Piece Messages: 26
-            Request Estimated RTT: 125 ms    Request Deviation RTT: 25 ms    Flying Request Messages: 15
+            Connecting Peers: 3    Delaying Request Messages: 5    Delaying Piece Messages: 35
+            Request Estimated RTT: 125 ms    Request Deviation RTT: 25 ms    Flying Request Messages: 18
             Available commands: (e)xit; (p)ause; (r)esume; (d)ownload limit_in_KB, (u)pload limit_in_KB. Enter (h)elp to disable this message.
             Enter help for available commands; enter Peer ID for more details:
             */
@@ -659,15 +659,15 @@ public class peerProcess {
             string += "\n";
             if (showDetailPeer instanceof HostPeer) {
                 HostPeer hostPeer = (HostPeer) showDetailPeer;
-                string += "Connecting Peers: " + hostPeer.getConnectionStarter().getConnectingPeerQueueSize() + "    ";
-                string += "Delaying Request Messages: " + hostPeer.getSpeedLimiter().getDelayedRequestMessageMapSize() + "    ";
-                string += "Delaying Piece Messages: " + hostPeer.getSpeedLimiter().getDelayedPieceMessageQueueSize();
+                string += "Connecting Peers: " + hostPeer.getConnectionStarter().getConnectingPeerCount() + "    ";
+                string += "Delaying Request Messages: " + hostPeer.getSpeedLimiter().getDelayedRequestMessageCount() + "    ";
+                string += "Delaying Piece Messages: " + hostPeer.getSpeedLimiter().getDelayedPieceMessageCount();
                 string += "\n";
             } else if (showDetailPeer instanceof NeighborPeer) {
                 NeighborPeer neighborPeer = (NeighborPeer) showDetailPeer;
                 string += "Request Estimated RTT: " + neighborPeer.getMessageHandler().getEstimatedRTT() + " ms    ";
                 string += "Request Deviation RTT: " + neighborPeer.getMessageHandler().getDeviationRTT() + " ms    ";
-                string += "Flying Request Messages: " + neighborPeer.getMessageHandler().getRequestedPieceQueueSize();
+                string += "Flying Request Messages: " + neighborPeer.getMessageHandler().getRequestedPieceCount();
                 string += "\n";
             }
             return string;

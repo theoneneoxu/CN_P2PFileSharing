@@ -7,6 +7,9 @@ import java.time.format.DateTimeFormatter;
 
 public class P2PLogger {
 
+    public static final boolean DEBUG = false;
+    private static final boolean LOG = true;
+
     private static PrintWriter fileIO;
     private static final Object fileIOLock;
 
@@ -27,6 +30,10 @@ public class P2PLogger {
     }
 
     public static void log(String string) {
+        if (!LOG) {
+            return;
+        }
+
         synchronized (fileIOLock) {
             fileIO.println(getCurrentTime() + ": " + string);
             fileIO.flush();

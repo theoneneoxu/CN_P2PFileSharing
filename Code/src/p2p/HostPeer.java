@@ -1,6 +1,7 @@
 package p2p;
 
 import static p2p.Peer.MessageType.*;
+import static p2p.P2PLogger.DEBUG;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -413,7 +414,7 @@ public class HostPeer extends Peer {
         private volatile int uploadingSpeedLimit;
         private final HostPeer hostPeer;
         private final ConcurrentHashMap<NeighborPeer, Integer> delayedRequestMessageMap;
-        private final ConcurrentLinkedQueue<PieceMessage> delayedPieceMessageQueue;
+        private final ConcurrentHashMap<NeighborPeer, ConcurrentLinkedQueue<Integer>> delayedPieceMessageMap;
 
         public SpeedLimiter(HostPeer hostPeer, int downloadingSpeedLimit, int uploadingSpeedLimit) {
             if (hostPeer == null) {
@@ -424,36 +425,17 @@ public class HostPeer extends Peer {
             this.downloadingSpeedLimit = downloadingSpeedLimit;
             this.uploadingSpeedLimit = uploadingSpeedLimit;
             delayedRequestMessageMap = new ConcurrentHashMap<>();
-            delayedPieceMessageQueue = new ConcurrentLinkedQueue<>();
+            delayedPieceMessageMap = new ConcurrentHashMap<>();
         }
 
         @Override
         public void run() {
             while (hostPeer.isRunning()) {
-                Iterator<Map.Entry<NeighborPeer, Integer>> MapIterator = delayedRequestMessageMap.entrySet().iterator();
-                while (MapIterator.hasNext()) {
-                    Map.Entry<NeighborPeer, Integer> entry = MapIterator.next();
-                    NeighborPeer neighborPeer = entry.getKey();
-                    int pieceIndex = entry.getValue();
-                    if (!neighborPeer.hasReachedDownloadingLimit()) {
-                        neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex);
-                        MapIterator.remove();
-                    }
-                }
-
-                Iterator<PieceMessage> queueIterator = delayedPieceMessageQueue.iterator();
-                while (queueIterator.hasNext()) {
-                    PieceMessage pieceMessage = queueIterator.next();
-                    NeighborPeer neighborPeer = pieceMessage.getNeighborPeer();
-                    int pieceIndex = pieceMessage.getPieceIndex();
-                    if (!neighborPeer.hasReachedUploadingLimit()) {
-                        neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex);
-                        queueIterator.remove();
-                    }
-                }
+                checkDelayedRequestMessages();
+                checkDelayedPieceMessages();
 
                 try {
-                    Thread.sleep(200);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
                     break;
                 }
@@ -461,6 +443,48 @@ public class HostPeer extends Peer {
 
             if (DEBUG) {
                 P2PLogger.log("[DEBUG] Thread exists for SpeedLimiter.");
+            }
+        }
+
+        private void checkDelayedRequestMessages() {
+            Iterator<Map.Entry<NeighborPeer, Integer>> iterator = delayedRequestMessageMap.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<NeighborPeer, Integer> entry = iterator.next();
+                NeighborPeer neighborPeer = entry.getKey();
+                int pieceIndex = entry.getValue();
+
+                if (neighborPeer.hasReachedDownloadingLimit()) {
+                    continue;
+                }
+                neighborPeer.getMessageHandler().sendMessage(REQUEST, pieceIndex);
+                iterator.remove();
+            }
+        }
+
+        private void checkDelayedPieceMessages() {
+            Iterator<Map.Entry<NeighborPeer, ConcurrentLinkedQueue<Integer>>> mapIterator = delayedPieceMessageMap.entrySet().iterator();
+            while (mapIterator.hasNext()) {
+                Map.Entry<NeighborPeer, ConcurrentLinkedQueue<Integer>> entry = mapIterator.next();
+                NeighborPeer neighborPeer = entry.getKey();
+                ConcurrentLinkedQueue<Integer> pieceIndexQueue = entry.getValue();
+
+                if (neighborPeer.hasCompleteFile() || hostPeer.getInactiveNeighborList().contains(neighborPeer)) {
+                    mapIterator.remove();
+                    continue;
+                }
+                if (!neighborPeer.isUnchokedByHost()) {
+                    continue;
+                }
+
+                Iterator<Integer> queueIterator = pieceIndexQueue.iterator();
+                while (queueIterator.hasNext()) {
+                    int pieceIndex = queueIterator.next();
+                    if (neighborPeer.hasReachedUploadingLimit()) {
+                        break;
+                    }
+                    neighborPeer.getMessageHandler().sendMessage(PIECE, pieceIndex);
+                    queueIterator.remove();
+                }
             }
         }
 
@@ -480,12 +504,12 @@ public class HostPeer extends Peer {
             uploadingSpeedLimit = limit;
         }
 
-        public int getDelayedRequestMessageMapSize() {
+        public int getDelayedRequestMessageCount() {
             return delayedRequestMessageMap.size();
         }
 
-        public int getDelayedPieceMessageQueueSize() {
-            return delayedPieceMessageQueue.size();
+        public int getDelayedPieceMessageCount() {
+            return delayedPieceMessageMap.values().stream().mapToInt(q -> q.size()).sum();
         }
 
         public boolean hasReachedDownloadingLimit(NeighborPeer neighborPeer) {
@@ -516,11 +540,13 @@ public class HostPeer extends Peer {
             }
         }
 
-        public boolean hasPendingPieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
-            if (delayedPieceMessageQueue.stream().anyMatch(m -> m.getNeighborPeer() == neighborPeer && m.getPieceIndex() == pieceIndex)) {
+        //Returns if the neighbor has any other delayed Piece Message other than the one specified by pieceIndex.
+        public boolean hasOtherPendingPieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
+            ConcurrentLinkedQueue<Integer> pieceIndexQueue = delayedPieceMessageMap.get(neighborPeer);
+            if (pieceIndexQueue == null || pieceIndexQueue.isEmpty()) {
                 return false;
             }
-            return delayedPieceMessageQueue.stream().anyMatch(m -> m.getNeighborPeer() == neighborPeer);
+            return !pieceIndexQueue.contains(pieceIndex);
         }
 
         public void delayRequestMessage(NeighborPeer neighborPeer, int pieceIndex) {
@@ -536,31 +562,12 @@ public class HostPeer extends Peer {
                 throw new IllegalArgumentException("Invalid neighborPeer happens when delaying Piece Message.");
             }
 
-            delayedPieceMessageQueue.add(new PieceMessage(neighborPeer, pieceIndex));
-        }
-
-        private class PieceMessage {
-
-            private final NeighborPeer neighborPeer;
-            private final int pieceIndex;
-
-            public PieceMessage(NeighborPeer neighborPeer, int pieceIndex) {
-                if (neighborPeer == null) {
-                    throw new IllegalArgumentException("Invalid neighborPeer happens when creating PieceMessage.");
-                }
-
-                this.neighborPeer = neighborPeer;
-                this.pieceIndex = pieceIndex;
+            ConcurrentLinkedQueue<Integer> pieceIndexQueue = delayedPieceMessageMap.get(neighborPeer);
+            if (pieceIndexQueue == null) {
+                pieceIndexQueue = new ConcurrentLinkedQueue<>();
+                delayedPieceMessageMap.put(neighborPeer, pieceIndexQueue);
             }
-
-            public NeighborPeer getNeighborPeer() {
-                return neighborPeer;
-            }
-
-            public int getPieceIndex() {
-                return pieceIndex;
-            }
-
+            pieceIndexQueue.add(pieceIndex);
         }
 
     }
@@ -682,7 +689,7 @@ public class HostPeer extends Peer {
             connectingPeerQueue.add(peer);
         }
 
-        public int getConnectingPeerQueueSize() {
+        public int getConnectingPeerCount() {
             return connectingPeerQueue.size();
         }
 

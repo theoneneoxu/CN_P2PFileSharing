@@ -1,6 +1,7 @@
 package p2p;
 
 import static p2p.Peer.MessageType.*;
+import static p2p.P2PLogger.DEBUG;
 
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -172,8 +173,8 @@ public class NeighborPeer extends Peer {
         return hostPeer.getSpeedLimiter().hasReachedUploadingLimit(this);
     }
 
-    public boolean hasPendingPieceMessage(int pieceIndex) {
-        return hostPeer.getSpeedLimiter().hasPendingPieceMessage(this, pieceIndex);
+    public boolean hasOtherPendingPieceMessage(int pieceIndex) {
+        return hostPeer.getSpeedLimiter().hasOtherPendingPieceMessage(this, pieceIndex);
     }
 
     public MessageHandler getMessageHandler() {
@@ -312,7 +313,7 @@ public class NeighborPeer extends Peer {
                         if (neighborPeer.isUnchokedByHost()) {
                             sendMessage(PIECE, pieceIndex);
                         } else {
-                            sendMessage(CHOKE);
+                            hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
                         }
                         break;
                     case PIECE:
@@ -393,7 +394,7 @@ public class NeighborPeer extends Peer {
                     messageLength += messagePayload.length;
                     break;
                 case PIECE:
-                    if (neighborPeer.hasReachedUploadingLimit() || neighborPeer.hasPendingPieceMessage(pieceIndex)) {
+                    if (neighborPeer.hasReachedUploadingLimit() || neighborPeer.hasOtherPendingPieceMessage(pieceIndex)) {
                         hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
                         return;
                     }
@@ -406,7 +407,7 @@ public class NeighborPeer extends Peer {
                     return;
             }
             if (DEBUG) {
-                P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " is sending " + messageType + " Message to Peer " + neighborPeer.getPeerID() + " for piece " + pieceIndex + ".");
+                P2PLogger.log("[DEBUG] Peer " + hostPeer.getPeerID() + " is sending " + messageType + " Message to Peer " + neighborPeer.getPeerID() + " with piece index " + pieceIndex + ".");
             }
 
             try {
@@ -429,22 +430,6 @@ public class NeighborPeer extends Peer {
             sendMessage(messageType, -1);
         }
 
-        public final void closeSocket() {
-            try {
-                synchronized (socketLock) {
-                    socket.close();
-                }
-            } catch (IOException e) {
-                P2PLogger.log("IOException happens when closing socket for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
-            }
-        }
-
-        public String getIPAddress() {
-            synchronized (socketLock) {
-                return socket.getInetAddress().getHostAddress();
-            }
-        }
-
         public long getEstimatedRTT() {
             return estimatedRTT;
         }
@@ -453,8 +438,24 @@ public class NeighborPeer extends Peer {
             return deviationRTT;
         }
 
-        public int getRequestedPieceQueueSize() {
+        public int getRequestedPieceCount() {
             return requestedPieceQueue.size();
+        }
+
+        public String getIPAddress() {
+            synchronized (socketLock) {
+                return socket.getInetAddress().getHostAddress();
+            }
+        }
+
+        public final void closeSocket() {
+            try {
+                synchronized (socketLock) {
+                    socket.close();
+                }
+            } catch (IOException e) {
+                P2PLogger.log("IOException happens when closing socket for peer " + neighborPeer.getPeerID() + ". Exception is not rethrown.");
+            }
         }
 
         //Only call this method when neighbor is reconnected.
@@ -504,7 +505,11 @@ public class NeighborPeer extends Peer {
                     requestSendingTimes = 0;
                 }
             } else {
-                requestSendingTimes = 2;
+                if (requestedPieceQueue.size() > 200) {
+                    requestSendingTimes = 0;
+                } else {
+                    requestSendingTimes = 2;
+                }
             }
 
             estimatedRTT = (7 * estimatedRTT + sampleRTT) / 8;

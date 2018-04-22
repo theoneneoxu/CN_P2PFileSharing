@@ -11,8 +11,6 @@ public class Peer {
     private final int pieceCount;
     private final BitSet pieceStatus;        //bit representation of file piece completion status
 
-    public static final boolean DEBUG = false;
-
     public enum MessageType {
 
         CHOKE((byte) 0),
