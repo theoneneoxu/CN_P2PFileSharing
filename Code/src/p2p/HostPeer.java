@@ -7,6 +7,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
@@ -656,7 +657,8 @@ public class HostPeer extends Peer {
                     while (iterator.hasNext() && hostPeer.isRunning()) {        //Prevent exit of program from waiting until all peers are tried. It could take N seconds.
                         Peer peer = iterator.next();
                         try {
-                            socket = new Socket(peer.getHostname(), peer.getPort());    //It may take 1s to get IOException if unable to connect.
+                            socket = new Socket();
+                            socket.connect(new InetSocketAddress(peer.getHostname(), peer.getPort()), 2000);
                         } catch (IOException e) {
                             continue;    //Unable to connect. Pass this peer.
                         }
