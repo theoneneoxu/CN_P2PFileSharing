@@ -5,7 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
-public class ProgressFile {
+public final class ProgressFile {
 
     private final String fileName;
     private final String fileDirectory;

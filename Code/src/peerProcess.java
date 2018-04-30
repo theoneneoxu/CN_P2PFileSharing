@@ -8,7 +8,7 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.io.FileNotFoundException;
 
-public class peerProcess {
+public final class peerProcess {
 
     //Default config file paths.
     private final String commonConfigPath = "Common.cfg";
@@ -24,12 +24,12 @@ public class peerProcess {
     private int optimisticUnchokingInterval = 20;
 
     //Default peer information config settings.
-    private ArrayList<Peer> peerList = new ArrayList<>();
+    private final ArrayList<Peer> peerList = new ArrayList<>();
     private int hostPeerIndex = -1;
 
-    private int hostPeerID;
-    private String fileDirectory;
-    private P2PLogger p2pLogger;
+    private final int hostPeerID;
+    private final String fileDirectory;
+    private final P2PLogger p2pLogger;
     private HostPeer hostPeer;
     private PeerMonitor peerMonitor;
 
@@ -326,7 +326,7 @@ public class peerProcess {
     }
 
     @SuppressWarnings("CatchMayIgnoreException")
-    public class PeerMonitor implements Runnable {
+    public final class PeerMonitor implements Runnable {
 
         private final int peerCount;
         private final HostPeer hostPeer;
@@ -523,7 +523,7 @@ public class peerProcess {
                 } catch (InterruptedException | IOException e) {
                     return -1;
                 }
-            } else if (osName.contains("linux") || osName.contains("unix")) {
+            } else if (osName.contains("linux") || osName.contains("unix") || osName.contains("mac")) {
                 System.out.print("\033[H\033[2J");
                 System.out.flush();
             } else {
@@ -687,7 +687,7 @@ public class peerProcess {
             return size + units[level];
         }
 
-        private class HostInfo {
+        private final class HostInfo {
             public int peerID;
             public int progressPercentage;
             public long downloadSpeed;
@@ -700,7 +700,7 @@ public class peerProcess {
             public long totalUpload;
         }
 
-        private class NeighborInfo {
+        private final class NeighborInfo {
             public int peerID;
             public int progressPercentage;
             public long downloadSpeed;

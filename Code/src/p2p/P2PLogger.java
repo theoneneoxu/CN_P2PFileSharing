@@ -5,7 +5,7 @@ import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-public class P2PLogger {
+public final class P2PLogger {
 
     public static final boolean DEBUG = false;
     private static final boolean LOG = true;

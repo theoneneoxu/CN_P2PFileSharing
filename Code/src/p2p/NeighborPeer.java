@@ -8,11 +8,12 @@ import java.nio.ByteBuffer;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 @SuppressWarnings("unused")
-public class NeighborPeer extends Peer {
+public final class NeighborPeer extends Peer {
 
     private volatile boolean preferredByHost;
     private volatile boolean optimisticByHost;
@@ -187,8 +188,7 @@ public class NeighborPeer extends Peer {
     }
 
     //Handles actual messages exchanged after handshake between host and neighbor.
-    @SuppressWarnings("CatchMayIgnoreException")
-    public class MessageHandler implements Runnable {
+    public final class MessageHandler implements Callable<MessageHandler.MessageHandlerResult> {
 
         private volatile long estimatedRTT;      //in milliseconds
         private volatile long deviationRTT;      //in milliseconds
@@ -232,7 +232,8 @@ public class NeighborPeer extends Peer {
         //Message listener.
         @SuppressWarnings("ConstantConditions")
         @Override
-        public void run() {
+        public MessageHandlerResult call() {
+            int resultCode = 0;
             int messageLength;
             int pieceIndex = -1;
             byte[] piece = null;
@@ -254,7 +255,7 @@ public class NeighborPeer extends Peer {
                 } catch (IOException e) {
                     if (hostPeer.isRunning()) {
                         P2PLogger.log("Connection is lost for Peer " + neighborPeer.getPeerID() + ".");
-                        hostPeer.deregisterNeighbor(neighborPeer);
+                        resultCode = 1;
                     }
                     break;
                 }
@@ -314,6 +315,7 @@ public class NeighborPeer extends Peer {
                             sendMessage(PIECE, pieceIndex);
                         } else {
                             hostPeer.getSpeedLimiter().delayPieceMessage(neighborPeer, pieceIndex);
+                            sendMessage(CHOKE);
                         }
                         break;
                     case PIECE:
@@ -354,8 +356,9 @@ public class NeighborPeer extends Peer {
 
             closeSocket();
             if (DEBUG) {
-                P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + ".");
+                P2PLogger.log("[DEBUG] Thread exists for MessageHandler of Peer " + neighborPeer.getPeerID() + " with result code " + resultCode + ".");
             }
+            return new MessageHandlerResult(resultCode, neighborPeer);
         }
 
         public void sendMessage(MessageType messageType, int pieceIndex) {
@@ -422,7 +425,7 @@ public class NeighborPeer extends Peer {
                     }
                     output.flush();
                 }
-            } catch (IOException e) {
+            } catch (IOException ignored) {
             }
         }
 
@@ -521,7 +524,7 @@ public class NeighborPeer extends Peer {
             return requestSendingTimes;
         }
 
-        private class RequestedPiece {
+        private final class RequestedPiece {
 
             private final int pieceIndex;
             private final long sentTimestamp;
@@ -537,6 +540,26 @@ public class NeighborPeer extends Peer {
 
             public long getSentTimestamp() {
                 return sentTimestamp;
+            }
+
+        }
+
+        public final class MessageHandlerResult {
+
+            private final int code;
+            private final NeighborPeer neighborPeer;
+
+            public MessageHandlerResult(int code, NeighborPeer neighborPeer) {
+                this.code = code;
+                this.neighborPeer = neighborPeer;
+            }
+
+            public int getCode() {
+                return code;
+            }
+
+            public NeighborPeer getNeighborPeer() {
+                return neighborPeer;
             }
 
         }

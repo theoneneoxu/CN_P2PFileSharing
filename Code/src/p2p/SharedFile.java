@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 
 @SuppressWarnings("unused")
-public class SharedFile {
+public final class SharedFile {
 
     private final String fileName;
     private final String fileDirectory;

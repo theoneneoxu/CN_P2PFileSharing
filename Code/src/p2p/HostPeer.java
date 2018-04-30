@@ -3,6 +3,8 @@ package p2p;
 import static p2p.Peer.MessageType.*;
 import static p2p.P2PLogger.DEBUG;
 
+import p2p.NeighborPeer.MessageHandler.MessageHandlerResult;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -20,7 +22,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 
-public class HostPeer extends Peer {
+public final class HostPeer extends Peer {
 
     private volatile boolean runningIndicator;
     private volatile boolean pauseIndicator;
@@ -35,6 +37,7 @@ public class HostPeer extends Peer {
     private final ArrayList<Peer> knownPeerList;
     private final CopyOnWriteArrayList<NeighborPeer> activeNeighborList;
     private final CopyOnWriteArrayList<NeighborPeer> inactiveNeighborList;
+    private final CopyOnWriteArrayList<Future<MessageHandlerResult>> neighborFutureList;
     private final ExecutorService neighborThreadPool;
 
     public HostPeer(Peer peer, int preferredNeighborCount, int preferredUnchokingInterval, int optimisticNeighborCount, int optimisticUnchokingInterval,
@@ -62,6 +65,7 @@ public class HostPeer extends Peer {
         connectionStarter = new ConnectionStarter(this, knownPeerList);
         activeNeighborList = new CopyOnWriteArrayList<>();
         inactiveNeighborList = new CopyOnWriteArrayList<>();
+        neighborFutureList = new CopyOnWriteArrayList<>();
         neighborThreadPool = Executors.newFixedThreadPool(10);
     }
 
@@ -78,7 +82,7 @@ public class HostPeer extends Peer {
     public void stopRunning() {
         runningIndicator = false;
 
-        //Wait a while before close sockets. There may be ongoing processing like neighbor listener sending message via output stream.
+        //Wait neighborFutureList while before close sockets. There may be ongoing processing like neighbor listener sending message via output stream.
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
@@ -129,14 +133,6 @@ public class HostPeer extends Peer {
         return pauseIndicator;
     }
 
-    public CopyOnWriteArrayList<NeighborPeer> getActiveNeighborList() {
-        return activeNeighborList;
-    }
-
-    public CopyOnWriteArrayList<NeighborPeer> getInactiveNeighborList() {
-        return inactiveNeighborList;
-    }
-
     public SharedFile getSharedFile() {
         return sharedFile;
     }
@@ -147,6 +143,18 @@ public class HostPeer extends Peer {
 
     public ConnectionStarter getConnectionStarter() {
         return connectionStarter;
+    }
+
+    public List<NeighborPeer> getActiveNeighborList() {
+        return Collections.unmodifiableList(activeNeighborList);
+    }
+
+    public List<NeighborPeer> getInactiveNeighborList() {
+        return Collections.unmodifiableList(inactiveNeighborList);
+    }
+
+    public CopyOnWriteArrayList<Future<MessageHandlerResult>> getNeighborFutureList() {
+        return neighborFutureList;
     }
 
     @Override
@@ -222,8 +230,9 @@ public class HostPeer extends Peer {
             neighborPeer.reactivatePeer(socket);
         }
         activeNeighborList.add(neighborPeer);
-        neighborThreadPool.execute(neighborPeer.getMessageHandler());
-        neighborPeer.getMessageHandler().sendMessage(BITFIELD);         //Once registered, send bitfield to neighbor.
+        Future<MessageHandlerResult> neighborFuture = neighborThreadPool.submit(neighborPeer.getMessageHandler());
+        neighborFutureList.add(neighborFuture);
+        neighborPeer.getMessageHandler().sendMessage(BITFIELD);         //After enlisted, send bitfield to neighbor.
     }
 
     public void deregisterNeighbor(NeighborPeer neighborPeer) {
@@ -238,7 +247,7 @@ public class HostPeer extends Peer {
         }
     }
 
-    private class PeerManager implements Runnable {
+    private final class PeerManager implements Runnable {
 
         private final int preferredNeighborCount;
         private final int preferredUnchokingInterval;    //in seconds
@@ -294,6 +303,9 @@ public class HostPeer extends Peer {
                 }
                 if (threadSleepCount % 1000 == 0) {
                     saveHostProgress();
+                }
+                if (threadSleepCount % 1000 == 0) {
+                    checkNeighborResults();
                 }
 
                 try {
@@ -407,9 +419,24 @@ public class HostPeer extends Peer {
             progressFile.writeFile(getPieceStatusAsBitfield());
         }
 
+        private void checkNeighborResults() {
+            hostPeer.getNeighborFutureList().forEach(f -> {
+                if (f.isDone()) {
+                    try {
+                        MessageHandlerResult messageHandlerResult = f.get();
+                        if (messageHandlerResult.getCode() != 0) {
+                            hostPeer.deregisterNeighbor(messageHandlerResult.getNeighborPeer());
+                        }
+                    } catch (InterruptedException | ExecutionException ignored) {
+                    }
+                    hostPeer.getNeighborFutureList().remove(f);
+                }
+            });
+        }
+
     }
 
-    public class SpeedLimiter implements Runnable {
+    public final class SpeedLimiter implements Runnable {
 
         private volatile int downloadingSpeedLimit;
         private volatile int uploadingSpeedLimit;
@@ -573,7 +600,7 @@ public class HostPeer extends Peer {
 
     }
 
-    private class ConnectionListener extends ConnectionHandler implements Runnable {
+    private final class ConnectionListener extends ConnectionHandler implements Runnable {
 
         private final HostPeer hostPeer;
         private final ServerSocket serverSocket;
@@ -628,7 +655,7 @@ public class HostPeer extends Peer {
 
     }
 
-    public class ConnectionStarter extends ConnectionHandler implements Runnable {
+    public final class ConnectionStarter extends ConnectionHandler implements Runnable {
 
         private final HostPeer hostPeer;
         private final ConcurrentLinkedQueue<Peer> connectingPeerQueue;
@@ -664,7 +691,7 @@ public class HostPeer extends Peer {
                         }
                         sendHandshake(socket, hostPeer.getPeerID());
                         int peerID = verifyHandshake(socket);
-                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes a connection to Peer " + peerID + ".");
+                        P2PLogger.log("Peer " + hostPeer.getPeerID() + " makes connection to Peer " + peerID + ".");
                         hostPeer.registerNeighbor(peerID, socket);
                         iterator.remove();
                     }
